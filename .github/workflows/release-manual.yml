@@ -1,0 +1,105 @@
+name: Create Release (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.1)'
+        required: true
+        type: string
+      tag:
+        description: 'Git tag (e.g., v1.0.1)'
+        required: true
+        type: string
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+    
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.tag }}" -m "Release ${{ inputs.version }}"
+          git push origin "${{ inputs.tag }}"
+    
+      - name: Extract release notes from CHANGELOG
+        id: get_changelog
+        run: |
+          VERSION="${{ inputs.version }}"
+          
+          # Use Python to extract the changelog section more reliably
+          python3 << 'PYTHON_SCRIPT'
+          import re
+          
+          version = "${{ inputs.version }}"
+          
+          try:
+              with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                  content = f.read()
+              
+              # Find the section for this version
+              pattern = r'## \[{}\] - .*?\n(.*?)(?=\n## \[|$)'.format(re.escape(version))
+              match = re.search(pattern, content, re.DOTALL)
+              
+              if match:
+                  release_notes = match.group(1).strip()
+                  # Remove extra blank lines
+                  release_notes = re.sub(r'\n{3,}', '\n\n', release_notes)
+              else:
+                  release_notes = f"Release {version}"
+              
+              # Write to output
+              with open('release_notes.txt', 'w', encoding='utf-8') as f:
+                  f.write(release_notes)
+              
+              print(f"Release notes extracted for version {version}")
+          except Exception as e:
+              print(f"Error: {e}")
+              with open('release_notes.txt', 'w', encoding='utf-8') as f:
+                  f.write(f"Release {version}")
+          PYTHON_SCRIPT
+          
+          # Read and output release notes
+          {
+            echo 'release_notes<<EOF'
+            cat release_notes.txt
+            echo EOF
+          } >> $GITHUB_OUTPUT
+    
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release v${{ inputs.version }}
+          body: |
+            ${{ steps.get_changelog.outputs.release_notes }}
+            
+            ## 📥 Installation
+            
+            1. Download the latest release from the Assets section below
+            2. Extract the zip file
+            3. Replace your existing `modora-reports` folder with the new version
+            4. Restart the resource: `restart modora-reports`
+            
+            ## 🔗 Links
+            
+            - [Full Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+            - [Documentation](https://github.com/${{ github.repository }}/blob/main/README.md)
+          draft: false
+          prerelease: false
+          files: |
+            *.lua
+            *.md
+            html/**
+            LICENSE
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
