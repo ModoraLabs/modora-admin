@@ -199,17 +199,12 @@ Success message shown in-game
 - Verify the Report Form URL is correct and accessible
 - Check if player data is being sent correctly to the iframe
 - Enable debug mode (`Config.Debug = true`) to see detailed logs
-- Check browser console (F8 in FiveM) for JavaScript errors
-- Verify CSRF token is not expired (refresh the form)
 
 ### Iframe not loading
 
 - Check browser console (F8 in FiveM)
 - Verify `Config.ReportFormURL` is correct
 - Check if the URL is accessible from your server
-- Ensure CORS is properly configured on Modora Dashboard
-- Check firewall/network restrictions
-- Try accessing the URL directly in a browser
 
 ### Custom fields not being sent
 
@@ -217,7 +212,6 @@ Success message shown in-game
 - Fill in a field and check if `customFieldValues` is being updated
 - Check console logs on submit to see if `customFields` is built correctly
 - Verify the form configuration in dashboard has fields defined
-- Check Laravel logs for validation errors
 
 ### Form is blank in-game
 
@@ -232,14 +226,12 @@ Success message shown in-game
 - Verify ticket panel is configured correctly
 - Check if the category has a panel assigned
 - Verify Discord bot has proper permissions
-- Check Laravel logs for errors
 
 ### Attachments not being sent
 
 - Verify file upload is enabled in form configuration
 - Check file size limits (max 10MB by default)
 - Ensure file types are allowed
-- Check CDN upload service is working
 - Verify attachments are being uploaded successfully
 
 ---
@@ -277,8 +269,6 @@ modora-reports/
 2. Check server console for logs
 3. Use FiveM console: `F8` to open browser console
 4. Test with `/report` command
-5. Check Laravel logs for backend errors
-6. Verify ticket creation in Discord
 
 ---
 
