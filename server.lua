@@ -1,5 +1,5 @@
 local screenshotCallbacks = {}
-local RESOURCE_VERSION = '1.0.0'
+local RESOURCE_VERSION = '1.0.1'
 local GITHUB_REPO = 'ModoraLabs/modora-reports'
 
 -- ============================================
@@ -56,7 +56,13 @@ Citizen.CreateThread(function()
                     print('[Modora] ⚠️ Could not parse GitHub response')
                 end
             end
+        elseif statusCode == 404 then
+            -- No releases found on GitHub (not an error, just means no releases published yet)
+            if Config.Debug then
+                print('[Modora] ℹ️ No releases found on GitHub yet (this is normal for new repositories)')
+            end
         else
+            -- Other HTTP errors (only log if debug is enabled)
             if Config.Debug then
                 print('[Modora] ⚠️ Could not check for updates (HTTP ' .. tostring(statusCode) .. ')')
             end
