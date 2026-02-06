@@ -1,96 +1,36 @@
 let isModalOpen = false;
-let reportFormUrl = '';
-let iframeReference = null;
+let playerData = null;
+let serverConfig = null;
+let formData = {
+    category: null,
+    subject: '',
+    description: '',
+    priority: 'normal',
+    targets: [],
+    attachments: [],
+    customFields: {}
+};
 
 // ============================================
-// NUI MESSAGE HANDLING (Single consolidated handler)
+// NUI MESSAGE HANDLING
 // ============================================
 
 window.addEventListener('message', function(event) {
     const data = event.data;
     
-    // Handle messages from FiveM client
     if (data.action === 'openReport') {
-        reportFormUrl = data.reportFormUrl;
         openModal();
     } else if (data.action === 'closeReport') {
         closeModal();
-    } else if (data.action === 'screenshotReady' && data.url) {
-        // Legacy screenshot support from FiveM client
-        const iframe = document.getElementById('reportIframe');
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'fivem:screenshot',
-                data: {
-                    url: data.url
-                }
-            }, '*');
+    } else if (data.action === 'serverConfig') {
+        serverConfig = data.config;
+        if (isModalOpen) {
+            loadForm();
         }
-    } else if (data.action === 'screenshotError') {
-        const iframe = document.getElementById('reportIframe');
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'fivem:screenshot',
-                data: {
-                    error: data.error || 'Failed to take screenshot'
-                }
-            }, '*');
-        }
-    } else if (data.type === 'screenshot_created' || 
-               data.action === 'screenshot_created' ||
-               (data.url && typeof data.url === 'string' && data.url.startsWith('http'))) {
-        // Handle screenshot_created from screenshot-basic
-        handleScreenshotCreated(data);
-    }
-    
-    // Handle messages FROM iframe (cross-origin messages)
-    // Only process if the message is from our iframe
-    const iframe = document.getElementById('reportIframe');
-    if (iframe && iframe.contentWindow && event.source === iframe.contentWindow) {
-        handleIframeMessage(data);
+    } else if (data.action === 'reportSubmitted') {
+        handleReportSubmitted(data.success, data.ticketNumber, data.error);
     }
 });
-
-// ============================================
-// HANDLE MESSAGES FROM IFRAME
-// ============================================
-
-function handleIframeMessage(data) {
-    // Handle report submitted
-    if (data.type === 'fivem:reportSubmitted') {
-        console.log('[Modora] Report submitted, success:', data.success);
-        if (data.success) {
-            // Notify FiveM client about success immediately
-            sendNUICallback('reportSubmitted', {
-                success: true,
-                ticketNumber: data.ticketNumber,
-                ticketId: data.ticketId
-            }).then(() => {
-                console.log('[Modora] Successfully notified FiveM client about report submission');
-            }).catch(err => {
-                console.error('[Modora] Failed to notify FiveM of report submission:', err);
-            });
-        } else {
-            // Notify FiveM client about error
-            sendNUICallback('reportSubmitted', {
-                success: false,
-                error: data.error || 'Unknown error'
-            }).catch(err => {
-                console.error('[Modora] Failed to notify FiveM of report error:', err);
-            });
-        }
-    }
-    
-    // Handle close request
-    if (data.type === 'fivem:closeForm') {
-        closeModal();
-    }
-    
-    // Handle screenshot request
-    if (data.type === 'fivem:requestScreenshot') {
-        requestScreenshot();
-    }
-}
 
 // ============================================
 // MODAL FUNCTIONS
@@ -98,72 +38,37 @@ function handleIframeMessage(data) {
 
 function openModal() {
     const modal = document.getElementById('reportModal');
-    const iframe = document.getElementById('reportIframe');
-    
-    if (!modal || !iframe) {
-        console.error('[Modora] Modal or iframe element not found');
+    if (!modal) {
+        console.error('[Modora] Modal element not found');
         return;
     }
     
-    // Check if URL is valid (not containing placeholders)
-    if (!reportFormUrl || reportFormUrl.includes('{')) {
-        console.error('[Modora] Invalid report form URL:', reportFormUrl);
-        alert('Report Form URL is not configured correctly. Please check config.lua and update the ReportFormURL with your actual URL from the dashboard.');
-        return;
-    }
-    
-    console.log('[Modora] Opening modal with URL:', reportFormUrl);
-    
-    // Store iframe reference for later use
-    iframeReference = iframe;
-    
-    // Make sure modal is visible first
+    console.log('[Modora] Opening report modal');
     modal.classList.remove('hidden');
     isModalOpen = true;
     
-    // Force reflow to ensure modal is visible before loading iframe
-    void modal.offsetHeight;
-    
-    // Clear previous iframe src if any, then set new one
-    iframe.src = '';
-    
-    // Small delay to ensure modal is fully rendered before loading iframe
-    setTimeout(() => {
-        console.log('[Modora] Setting iframe src to:', reportFormUrl);
-        iframe.src = reportFormUrl;
-        
-        // Send player data to iframe after it loads
-        iframe.onload = function() {
-            console.log('[Modora] Iframe loaded successfully');
-            // Small delay to ensure iframe contentWindow is fully ready
-            setTimeout(() => {
-                sendPlayerDataToIframe();
-            }, 200);
-        };
-        
-        iframe.onerror = function() {
-            console.error('[Modora] Error loading iframe:', reportFormUrl);
-            // Show error message to user
-            const errorMsg = 'Failed to load report form. Please check your internet connection and try again.';
-            alert(errorMsg);
-        };
-    }, 100);
+    // Request player data and server config
+    requestPlayerData();
+    requestServerConfig();
 }
 
 function closeModal() {
     const modal = document.getElementById('reportModal');
-    const iframe = document.getElementById('reportIframe');
-    
     if (modal) {
         modal.classList.add('hidden');
     }
-    
-    if (iframe) {
-        iframe.src = '';
-        iframeReference = null;
-    }
-    
     isModalOpen = false;
+    
+    // Reset form
+    formData = {
+        category: null,
+        subject: '',
+        description: '',
+        priority: 'normal',
+        targets: [],
+        attachments: [],
+        customFields: {}
+    };
     
     // Notify FiveM
     sendNUICallback('closeReport', {}).catch(err => {
@@ -176,7 +81,7 @@ function GetParentResourceName() {
 }
 
 // ============================================
-// HELPER FUNCTION FOR NUI CALLBACKS
+// NUI CALLBACKS
 // ============================================
 
 function sendNUICallback(callbackName, data) {
@@ -194,7 +99,6 @@ function sendNUICallback(callbackName, data) {
         return response.json();
     })
     .catch(err => {
-        // Only log errors that are not network-related (resource not found is expected if resource is down)
         if (err.name !== 'TypeError' || !err.message.includes('Failed to fetch')) {
             console.error(`[Modora] Error calling ${callbackName}:`, err);
         }
@@ -202,161 +106,277 @@ function sendNUICallback(callbackName, data) {
     });
 }
 
-// ============================================
-// SEND PLAYER DATA TO IFRAME
-// ============================================
-
-function sendPlayerDataToIframe() {
-    // Request player data from FiveM
+function requestPlayerData() {
     sendNUICallback('requestPlayerData', {})
-    .then(data => {
-        console.log('Player data received from FiveM:', data);
-        if (data && data.success && data.playerData) {
-            // Send player data to iframe via postMessage
-            const iframe = iframeReference || document.getElementById('reportIframe');
-            if (iframe && iframe.contentWindow) {
-                try {
-                    console.log('Sending player data to iframe:', data.playerData);
-                    iframe.contentWindow.postMessage({
-                        type: 'fivem:playerData',
-                        data: data.playerData
-                    }, '*');
-                } catch (e) {
-                    console.error('Error sending postMessage to iframe:', e);
+        .then(data => {
+            if (data && data.success && data.playerData) {
+                playerData = data.playerData;
+                console.log('[Modora] Player data received:', playerData);
+                if (isModalOpen) {
+                    loadForm();
                 }
-            } else {
-                console.warn('[Modora] Iframe or contentWindow not available yet, retrying in 500ms...');
-                // Retry after a short delay if iframe isn't ready
-                setTimeout(() => {
-                    sendPlayerDataToIframe();
-                }, 500);
             }
-        } else {
-            console.error('No player data in response:', data);
-        }
-    })
-    .catch(err => {
-        // Don't log network errors as they're expected if the resource isn't running
-        // Only log unexpected errors
-        if (err.message && !err.message.includes('Failed to fetch')) {
-            console.error('Failed to get player data:', err);
-        }
-    });
+        })
+        .catch(err => {
+            console.error('[Modora] Failed to get player data:', err);
+        });
 }
 
-
-// ============================================
-// SCREENSHOT FUNCTIONALITY
-// ============================================
-
-function requestScreenshot() {
-    console.log('[Modora] Requesting screenshot...');
-    sendNUICallback('takeScreenshot', {})
-    .then(data => {
-        console.log('[Modora] Screenshot response:', data);
-        const iframe = iframeReference || document.getElementById('reportIframe');
-        
-        if (data.success && data.processing) {
-            // Screenshot is being processed, wait for NUI callback
-            console.log('[Modora] Screenshot processing, waiting for result...');
-        } else if (data.success && data.url) {
-            // Direct URL response (shouldn't happen with new flow)
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({
-                    type: 'fivem:screenshot',
-                    data: {
-                        url: data.url
-                    }
-                }, '*');
-            }
-        } else {
-            // Screenshot failed - send error to iframe
-            console.error('[Modora] Screenshot failed:', data.error);
-            if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage({
-                    type: 'fivem:screenshot',
-                    data: {
-                        error: data.error || 'Failed to capture screenshot',
-                        fallback: data.fallback || false
-                    }
-                }, '*');
-            }
-        }
-    })
-    .catch(err => {
-        console.error('[Modora] Screenshot error:', err);
-        // Send error to iframe
-        const iframe = iframeReference || document.getElementById('reportIframe');
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'fivem:screenshot',
-                data: {
-                    error: 'Screenshot functionality is not available. Please use file upload to add screenshots manually.',
-                    fallback: true
+function requestServerConfig() {
+    sendNUICallback('requestServerConfig', {})
+        .then(data => {
+            if (data && data.success && data.config) {
+                serverConfig = data.config;
+                console.log('[Modora] Server config received:', serverConfig);
+                if (isModalOpen) {
+                    loadForm();
                 }
-            }, '*');
-        }
-    });
+            }
+        })
+        .catch(err => {
+            console.error('[Modora] Failed to get server config:', err);
+        });
 }
 
 // ============================================
-// HANDLE SCREENSHOT CREATED FROM SCREENSHOT-BASIC
+// FORM LOADING
 // ============================================
-// screenshot-basic uses SendNUIMessage to call this callback
-// It sends a message with type 'screenshot_created' to the NUI context
-function handleScreenshotCreated(data) {
-    console.log('[Modora] screenshot_created received from screenshot-basic:', data);
+
+function loadForm() {
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const formContent = document.getElementById('formContent');
+    const formError = document.getElementById('formError');
     
-    // Extract URL from various possible formats
-    const screenshotData = data.data || data;
-    const url = screenshotData.url || data.url || screenshotData.uploadUrl || screenshotData.link;
-    
-    const iframe = iframeReference || document.getElementById('reportIframe');
-    
-    if (url && typeof url === 'string' && url !== '') {
-        console.log('[Modora] Screenshot URL received:', url);
-        
-        // Forward to client.lua via NUI callback
-        sendNUICallback('screenshotResult', {
-            url: url,
-            success: true
-        }).catch(err => {
-            console.error('[Modora] Error sending screenshot result:', err);
-        });
-        
-        // Also send to iframe
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'fivem:screenshot',
-                data: {
-                    url: url
-                }
-            }, '*');
+    if (!playerData) {
+        if (loadingIndicator) loadingIndicator.classList.remove('hidden');
+        if (formContent) formContent.classList.add('hidden');
+        if (formError) {
+            formError.classList.add('hidden');
+            formError.textContent = '';
         }
-    } else {
-        console.error('[Modora] Screenshot created but no URL found:', screenshotData);
-        const error = screenshotData.error || data.error || screenshotData.message || data.message || 'No URL returned';
+        return;
+    }
+    
+    // Hide loading, show form
+    if (loadingIndicator) loadingIndicator.classList.add('hidden');
+    if (formContent) formContent.classList.remove('hidden');
+    if (formError) formError.classList.add('hidden');
+    
+    // Build form HTML
+    const categories = serverConfig?.categories || [
+        { id: 'cheat', label: 'Cheating / Modding' },
+        { id: 'rdm', label: 'RDM / VDM' },
+        { id: 'bug', label: 'Bug / Technical Issue' },
+        { id: 'other', label: 'Other' }
+    ];
+    
+    let formHTML = `
+        <form id="reportFormElement" class="report-form">
+            <div class="form-section">
+                <label class="form-label">Category *</label>
+                <select id="categorySelect" class="form-select" required>
+                    <option value="">Select a category...</option>
+                    ${categories.map(cat => `<option value="${cat.id}">${cat.label}</option>`).join('')}
+                </select>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">Subject *</label>
+                <input type="text" id="subjectInput" class="form-input" placeholder="Brief description of the issue" required maxlength="255">
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">Description *</label>
+                <textarea id="descriptionInput" class="form-textarea" placeholder="Provide detailed information about the issue..." required rows="6"></textarea>
+            </div>
+            
+            <div class="form-section">
+                <label class="form-label">Priority</label>
+                <select id="prioritySelect" class="form-select">
+                    <option value="low">Low</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                </select>
+            </div>
+            
+            ${playerData.nearbyPlayers && playerData.nearbyPlayers.length > 0 ? `
+            <div class="form-section">
+                <label class="form-label">Reported Players (Optional)</label>
+                <div class="nearby-players">
+                    ${playerData.nearbyPlayers.map(player => `
+                        <label class="player-checkbox">
+                            <input type="checkbox" value="${player.fivemId}" data-player-name="${player.name}">
+                            <span>${player.name} (ID: ${player.fivemId}, ${player.distance}m away)</span>
+                        </label>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Submit Report</button>
+            </div>
+        </form>
+    `;
+    
+    if (formContent) {
+        formContent.innerHTML = formHTML;
         
-        sendNUICallback('screenshotResult', {
-            success: false,
-            error: error
-        }).catch(err => {
-            console.error('[Modora] Error sending screenshot error:', err);
-        });
-        
-        // Send error to iframe
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.postMessage({
-                type: 'fivem:screenshot',
-                data: {
-                    error: error
-                }
-            }, '*');
+        // Attach event listeners
+        const formElement = document.getElementById('reportFormElement');
+        if (formElement) {
+            formElement.addEventListener('submit', handleFormSubmit);
         }
+        
+        // Update form data on change
+        const categorySelect = document.getElementById('categorySelect');
+        const subjectInput = document.getElementById('subjectInput');
+        const descriptionInput = document.getElementById('descriptionInput');
+        const prioritySelect = document.getElementById('prioritySelect');
+        
+        if (categorySelect) {
+            categorySelect.addEventListener('change', (e) => {
+                formData.category = e.target.value;
+            });
+        }
+        
+        if (subjectInput) {
+            subjectInput.addEventListener('input', (e) => {
+                formData.subject = e.target.value;
+            });
+        }
+        
+        if (descriptionInput) {
+            descriptionInput.addEventListener('input', (e) => {
+                formData.description = e.target.value;
+            });
+        }
+        
+        if (prioritySelect) {
+            prioritySelect.addEventListener('change', (e) => {
+                formData.priority = e.target.value;
+            });
+        }
+        
+        // Handle nearby players checkboxes
+        const checkboxes = formContent.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    formData.targets.push({
+                        fivemId: parseInt(e.target.value),
+                        name: e.target.dataset.playerName
+                    });
+                } else {
+                    formData.targets = formData.targets.filter(t => t.fivemId !== parseInt(e.target.value));
+                }
+            });
+        });
     }
 }
 
-// ESC key to close
+// ============================================
+// FORM SUBMISSION
+// ============================================
+
+function handleFormSubmit(e) {
+    e.preventDefault();
+    
+    // Validate form
+    if (!formData.category || !formData.subject || !formData.description) {
+        showError('Please fill in all required fields');
+        return;
+    }
+    
+    // Prepare report data
+    const reportData = {
+        category: formData.category,
+        subject: formData.subject,
+        description: formData.description,
+        priority: formData.priority,
+        reporter: {
+            fivemId: playerData.fivemId,
+            name: playerData.name,
+            identifiers: playerData.identifiers,
+            position: playerData.position
+        },
+        targets: formData.targets,
+        attachments: formData.attachments,
+        customFields: formData.customFields
+    };
+    
+    console.log('[Modora] Submitting report:', reportData);
+    
+    // Show loading state
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = 'Submitting...';
+    }
+    
+    // Submit via NUI callback
+    sendNUICallback('submitReport', reportData)
+        .then(data => {
+            if (data && data.success) {
+                // Wait for server response via event
+                console.log('[Modora] Report submitted, waiting for confirmation...');
+            } else {
+                showError(data?.error || 'Failed to submit report');
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Submit Report';
+                }
+            }
+        })
+        .catch(err => {
+            console.error('[Modora] Error submitting report:', err);
+            showError('Failed to submit report. Please try again.');
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = 'Submit Report';
+            }
+        });
+}
+
+function handleReportSubmitted(success, ticketNumber, error) {
+    const submitButton = document.querySelector('button[type="submit"]');
+    if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Submit Report';
+    }
+    
+    if (success) {
+        // Show success message
+        const formContent = document.getElementById('formContent');
+        if (formContent) {
+            formContent.innerHTML = `
+                <div class="success-message">
+                    <div class="success-icon">✓</div>
+                    <h3>Report Submitted Successfully!</h3>
+                    <p>Your report has been submitted. Ticket ID: <strong>#${ticketNumber}</strong></p>
+                    <button class="btn btn-primary" onclick="closeModal()">Close</button>
+                </div>
+            `;
+        }
+    } else {
+        showError(error || 'Failed to submit report');
+    }
+}
+
+function showError(message) {
+    const formError = document.getElementById('formError');
+    if (formError) {
+        formError.textContent = message;
+        formError.classList.remove('hidden');
+    }
+}
+
+// ============================================
+// ESC KEY HANDLING
+// ============================================
+
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && isModalOpen) {
         closeModal();

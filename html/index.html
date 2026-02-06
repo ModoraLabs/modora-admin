@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- NUI Modal with Iframe -->
+    <!-- Report Form Modal -->
     <div id="reportModal" class="modal hidden">
         <div class="modal-backdrop" onclick="closeModal()"></div>
         <div class="modal-container">
@@ -28,9 +28,18 @@
                     </button>
                 </div>
                 
-                <!-- Iframe Container -->
+                <!-- Report Form -->
                 <div class="modal-body">
-                    <iframe id="reportIframe" src="" frameborder="0" allowfullscreen></iframe>
+                    <div id="reportForm">
+                        <div id="loadingIndicator" class="loading">
+                            <div class="spinner"></div>
+                            <p>Loading form...</p>
+                        </div>
+                        <div id="formContent" class="hidden">
+                            <!-- Form will be dynamically generated here -->
+                        </div>
+                        <div id="formError" class="error-message hidden"></div>
+                    </div>
                 </div>
             </div>
         </div>
