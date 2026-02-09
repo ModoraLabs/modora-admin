@@ -122,40 +122,81 @@ RegisterNUICallback('submitReport', function(data, cb)
         reporter = data.reporter or {},
         targets = data.targets or {},
         attachments = data.attachments or {},
-        customFields = data.customFields or {}
+        customFields = data.customFields or {},
+        evidenceUrls = data.evidenceUrls or {}
     }
     
     TriggerServerEvent('modora:submitReport', reportData)
     cb({ success = true, processing = true })
 end)
 
+-- Screenshot upload (screenshot-basic): NUI requests upload URL, server provides it, client uploads and sends URL back to NUI
+local screenshotCb = nil
+
+RegisterNUICallback('requestScreenshotUpload', function(data, cb)
+    screenshotCb = cb
+    TriggerServerEvent('modora:getScreenshotUploadUrl')
+end)
+
+RegisterNetEvent('modora:screenshotUploadUrl')
+AddEventHandler('modora:screenshotUploadUrl', function(uploadUrl)
+    if not uploadUrl or uploadUrl == '' then
+        if screenshotCb then
+            screenshotCb({ success = false, error = 'Could not get upload URL' })
+            screenshotCb = nil
+        end
+        return
+    end
+    local pcallSuccess, err = pcall(function()
+        exports['screenshot-basic']:requestScreenshotUpload(uploadUrl, 'file', { encoding = 'png' }, function(responseBody)
+            local url = nil
+            if responseBody and responseBody ~= '' then
+                local ok, data = pcall(json.decode, responseBody)
+                if ok and data and data.url then
+                    url = data.url
+                end
+            end
+            SendNUIMessage({ action = 'screenshotReady', url = url })
+            if screenshotCb then
+                screenshotCb({ success = (url ~= nil), url = url })
+                screenshotCb = nil
+            end
+        end)
+    end)
+    if not pcallSuccess and screenshotCb then
+        screenshotCb({ success = false, error = 'screenshot-basic not available or failed' })
+        screenshotCb = nil
+    end
+end)
+
 RegisterNetEvent('modora:reportSubmitted')
-AddEventHandler('modora:reportSubmitted', function(success, ticketNumber, error)
-    if success then
+AddEventHandler('modora:reportSubmitted', function(payload)
+    if type(payload) ~= 'table' then
+        payload = { success = false, error = 'Invalid response' }
+    end
+    if payload.success then
         TriggerEvent('chat:addMessage', {
             color = {0, 255, 0},
             multiline = true,
-            args = {'[Modora]', string.format(GetMessage('report_sent'), ticketNumber)}
+            args = {'[Modora]', string.format(GetMessage('report_sent'), payload.ticketNumber or payload.ticketId or '')}
         })
-        SetNuiFocus(false, false)
-        isMenuOpen = false
-        SendNUIMessage({
-            action = 'reportSubmitted',
-            success = true,
-            ticketNumber = ticketNumber
-        })
+        -- Keep NUI open so user sees success screen; they close via Close button
     else
         TriggerEvent('chat:addMessage', {
             color = {255, 0, 0},
             multiline = true,
-            args = {'[Modora]', GetMessage('report_failed') .. (error and (': ' .. error) or '')}
-        })
-        SendNUIMessage({
-            action = 'reportSubmitted',
-            success = false,
-            error = error or 'Unknown error'
+            args = {'[Modora]', GetMessage('report_failed') .. (payload.error and (': ' .. payload.error) or '')}
         })
     end
+    SendNUIMessage({
+        action = 'reportSubmitted',
+        success = payload.success,
+        ticketNumber = payload.ticketNumber,
+        ticketId = payload.ticketId,
+        ticketUrl = payload.ticketUrl,
+        error = payload.error,
+        cooldownSeconds = payload.cooldownSeconds
+    })
 end)
 
 RegisterNetEvent('modora:serverConfig')
@@ -190,8 +231,16 @@ RegisterCommand(Config.ReportCommand, function()
     isMenuOpen = true
     SetNuiFocus(true, true)
     
+    -- INIT payload: serverName from convar, optional for NUI branding
+    local serverName = GetConvar('sv_projectName', '') or GetConvar('sv_hostname', '') or ''
+    if serverName == '' then serverName = 'Server' end
     SendNUIMessage({
-        action = 'openReport'
+        action = 'openReport',
+        type = 'INIT',
+        serverName = serverName,
+        cooldownRemaining = 0,
+        playerName = GetPlayerName(PlayerId()),
+        version = '1.0'
     })
     
     TriggerEvent('chat:addMessage', {
@@ -229,5 +278,17 @@ Citizen.CreateThread(function()
                 })
             end
         end
+    end
+end)
+
+-- ============================================
+-- MODERATION: warn notification
+-- ============================================
+RegisterNetEvent('modora:moderation:warn', function(message)
+    if message and message ~= '' then
+        TriggerEvent('chat:addMessage', {
+            color = { 255, 165, 0 },
+            args = { '[Modora]', 'Warning: ' .. tostring(message) }
+        })
     end
 end)

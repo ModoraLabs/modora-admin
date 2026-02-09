@@ -1,5 +1,5 @@
 local RESOURCE_VERSION = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
-local GITHUB_REPO = 'ModoraLabs/modora-reports'
+local GITHUB_REPO = 'ModoraLabs/modora-admin'
 
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then
@@ -330,22 +330,23 @@ local function submitReport(reportData, callback)
                 errorMsg = errorMsg .. ' Using HTTPS. Try switching to HTTP in config.lua to avoid SSL/TLS issues.'
             end
             
-            if callback then callback(false, nil, errorMsg) end
+            if callback then callback(false, nil, errorMsg, nil) end
         elseif statusNum == 201 or statusNum == 200 then
             local success, data = pcall(json.decode, response)
             if success and data then
-                if callback then callback(true, data, nil) end
+                if callback then callback(true, data, nil, nil) end
             else
-                if callback then callback(false, nil, 'Failed to parse response') end
+                if callback then callback(false, nil, 'Failed to parse response', nil) end
             end
         elseif statusNum == 401 then
-            if callback then callback(false, nil, 'Authentication failed. Check your API token.') end
+            if callback then callback(false, nil, 'Authentication failed. Check your API token.', nil) end
         elseif statusNum == 429 then
             local success, data = pcall(json.decode, response)
+            local cooldownSec = (success and data and data.remaining_seconds) and tonumber(data.remaining_seconds) or (success and data and data.cooldown_seconds) and tonumber(data.cooldown_seconds) or nil
             if success and data and data.remaining_seconds then
-                if callback then callback(false, nil, 'Cooldown active. Please wait ' .. data.remaining_seconds .. ' seconds.') end
+                if callback then callback(false, nil, 'Cooldown active. Please wait ' .. data.remaining_seconds .. ' seconds.', cooldownSec) end
             else
-                if callback then callback(false, nil, 'Rate limit exceeded. Please wait before submitting another report.') end
+                if callback then callback(false, nil, 'Rate limit exceeded. Please wait before submitting another report.', cooldownSec) end
             end
         else
             local errorMsg = 'HTTP ' .. tostring(statusCode)
@@ -360,7 +361,7 @@ local function submitReport(reportData, callback)
             if Config.Debug then
                 print('[Modora] Report submission failed: ' .. errorMsg)
             end
-            if callback then callback(false, nil, errorMsg) end
+            if callback then callback(false, nil, errorMsg, nil) end
         end
     end)
 end
@@ -375,7 +376,11 @@ AddEventHandler('modora:submitReport', function(reportData)
     
     -- Validate required fields
     if not reportData.category or not reportData.subject or not reportData.description then
-        TriggerClientEvent('modora:reportSubmitted', source, false, nil, 'Missing required fields')
+        TriggerClientEvent('modora:reportSubmitted', source, {
+            success = false,
+            error = 'Missing required fields',
+            cooldownSeconds = nil
+        })
         return
     end
     
@@ -386,14 +391,63 @@ AddEventHandler('modora:submitReport', function(reportData)
     reportData.reporter.fivemId = source
     reportData.reporter.name = GetPlayerName(source)
     
+    -- Merge evidence URLs into meta for API
+    reportData.meta = reportData.meta or {}
+    if reportData.evidenceUrls and type(reportData.evidenceUrls) == 'table' then
+        reportData.meta.evidence_urls = reportData.evidenceUrls
+    end
+    
     -- Submit to API
-    submitReport(reportData, function(success, data, error)
+    submitReport(reportData, function(success, data, err, cooldownSeconds)
         if success and data then
-            TriggerClientEvent('modora:reportSubmitted', source, true, data.ticketNumber or data.ticketId, nil)
+            TriggerClientEvent('modora:reportSubmitted', source, {
+                success = true,
+                ticketNumber = data.ticketNumber,
+                ticketId = data.ticketId,
+                ticketUrl = data.ticketUrl,
+                error = nil,
+                cooldownSeconds = nil
+            })
         else
-            TriggerClientEvent('modora:reportSubmitted', source, false, nil, error or 'Unknown error')
+            TriggerClientEvent('modora:reportSubmitted', source, {
+                success = false,
+                ticketNumber = nil,
+                ticketId = nil,
+                ticketUrl = nil,
+                error = err or 'Unknown error',
+                cooldownSeconds = cooldownSeconds
+            })
         end
     end)
+end)
+
+-- ============================================
+-- SCREENSHOT UPLOAD TOKEN (for screenshot-basic)
+-- ============================================
+
+RegisterNetEvent('modora:getScreenshotUploadUrl')
+AddEventHandler('modora:getScreenshotUploadUrl', function()
+    local source = source
+    local baseUrl = (Config.ModoraAPIBase or ''):gsub('/+$', ''):match('^%s*(.-)%s*$')
+    if baseUrl == '' or (Config.APIToken or '') == '' then
+        TriggerClientEvent('modora:screenshotUploadUrl', source, '')
+        return
+    end
+    local url = baseUrl .. '/upload-token'
+    local headers = buildAuthHeaders()
+    performHttpRequestWithRetry(url, 'POST', '{}', headers, function(statusCode, response)
+        local uploadUrl = ''
+        local statusNum = tonumber(statusCode) or 0
+        if statusNum == 200 and response and response ~= '' then
+            local ok, data = pcall(json.decode, response)
+            if ok and data and data.upload_url then
+                uploadUrl = tostring(data.upload_url)
+            end
+        end
+        Citizen.CreateThread(function()
+            TriggerClientEvent('modora:screenshotUploadUrl', source, uploadUrl)
+        end)
+    end, 2)
 end)
 
 -- ============================================
@@ -422,7 +476,6 @@ local function testAPIConnection()
     
     print('[Modora] Testing API connection to: ' .. testUrl)
     
-    -- Use a longer timeout and specific headers for FiveM compatibility
     local protocol = testUrl:match('^(https?)://')
     
     if Config.Debug then
@@ -443,7 +496,6 @@ local function testAPIConnection()
     end
 
     PerformHttpRequest(testUrl, function(statusCode, response, responseHeaders)
-        -- Convert statusCode to number for comparison
         local statusNum = tonumber(statusCode) or 0
         
         if statusNum == 0 then
@@ -535,7 +587,6 @@ RegisterCommand('modora_debug_http', function(source)
     testHttpEndpoint('http://api.modora.xyz/test', 'modora-http-test')
     testHttpEndpoint('https://api.modora.xyz/test', 'modora-https-test')
 
-    -- Direct IP test with Host header to bypass DNS/Cloudflare
     local ip = '157.180.103.21'
     local function testIpEndpoint(url, label, hostHeader)
         local headers = {
@@ -578,7 +629,6 @@ end, false)
 Citizen.CreateThread(function()
     Citizen.Wait(2000) -- Wait 2 seconds after resource start
     
-    -- Validate configuration
     local configValid = true
     local errors = {}
     
@@ -605,7 +655,6 @@ Citizen.CreateThread(function()
         print('^1[Modora]   4. Paste it in config.lua as Config.APIToken^7')
     else
         print('^2[Modora] ✅ Configuration validated successfully^7')
-        -- Test API connection after validation
         Citizen.Wait(1000)
         testAPIConnection()
     end

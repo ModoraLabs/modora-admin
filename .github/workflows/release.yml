@@ -62,8 +62,8 @@ jobs:
 
               1. Download the latest release from the Assets section below
               2. Extract the zip file
-              3. Replace your existing `modora-reports` folder with the new version
-              4. Restart the resource: `restart modora-reports`
+              3. Replace your existing `modora-admin` folder with the new version
+              4. Restart the resource: `restart modora-admin`
 
               ## 🔗 Links
 
@@ -85,8 +85,8 @@ jobs:
 
               1. Download the latest release from the Assets section below
               2. Extract the zip file
-              3. Replace your existing `modora-reports` folder with the new version
-              4. Restart the resource: `restart modora-reports`
+              3. Replace your existing `modora-admin` folder with the new version
+              4. Restart the resource: `restart modora-admin`
 
               ## 🔗 Links
 
@@ -105,8 +105,10 @@ jobs:
           prerelease: false
           files: |
             *.lua
-            *.md
+            client/*.lua
+            server/*.lua
             html/**
+            *.md
             LICENSE
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

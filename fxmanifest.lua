@@ -2,25 +2,26 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ModoraLabs'
-description 'Modora FiveM Integration - Report system that creates Discord tickets'
-version '1.0.4'
+description 'Modora FiveM Admin - Reports (Discord tickets) + Moderation bridge (bans, whitelist, command queue)'
+version '1.0.5'
 
 dependency 'screenshot-basic'
 
 client_scripts {
     'config.lua',
-    'client.lua'
+    'client/main.lua'
 }
 
 server_scripts {
     'config.lua',
-    'server.lua'
+    'server/main.lua',
+    'server/moderation.lua'
 }
 
 ui_page 'html/index.html'
 
 files {
     'html/index.html',
-    'html/style.css',
-    'html/script.js'
+    'html/styles.css',
+    'html/app.js'
 }

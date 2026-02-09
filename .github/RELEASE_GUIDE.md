@@ -1,6 +1,6 @@
 # 🚀 Release Guide
 
-This guide explains how to create releases for modora-reports using GitHub Actions.
+This guide explains how to create releases for modora-admin using GitHub Actions.
 
 ## 📋 Automatic Release (Recommended)
 
