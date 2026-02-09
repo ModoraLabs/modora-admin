@@ -1,5 +1,13 @@
-local RESOURCE_VERSION = '2.0.0'
+local RESOURCE_VERSION = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
 local GITHUB_REPO = 'ModoraLabs/modora-reports'
+
+AddEventHandler('onResourceStart', function(resourceName)
+    if resourceName ~= GetCurrentResourceName() then
+        return
+    end
+
+    print('[Modora] Resource version (fxmanifest): ' .. RESOURCE_VERSION)
+end)
 
 -- ============================================
 -- VERSION CHECK
