@@ -3,33 +3,14 @@ Config = {}
 -- ============================================
 -- API CONFIGURATION (REQUIRED)
 -- ============================================
--- API Base URL - Uses HTTP/1.1 for FiveM compatibility
--- IMPORTANT: Must start with http:// or https:// and NOT have a trailing slash
--- 
--- OPTION 1: Use direct domain (no Cloudflare) - RECOMMENDED
---   Config.ModoraAPIBase = 'http://api.ditiskevin.nl'
---   Note: Direct IP connection, no Cloudflare redirects. Works immediately.
---   Make sure api.ditiskevin.nl points to your dashboard IP (alpha or production)
---
--- OPTION 2: Use alpha environment API
---   Config.ModoraAPIBase = 'http://api.alpha.modora.xyz'
---   Note: For alpha/testing environment. Direct connection, no Cloudflare.
---
--- OPTION 3: Use HTTPS (if Cloudflare redirects HTTP to HTTPS)
---   Config.ModoraAPIBase = 'https://api.modora.xyz'
---   Note: Requires working SSL/TLS on FiveM server. If you get HTTP 0 errors, try Option 1.
---
--- OPTION 4: Use HTTP with Cloudflare (requires Cloudflare configuration)
---   Config.ModoraAPIBase = 'http://api.modora.xyz'
---   Note: You MUST configure Cloudflare to allow HTTP (see README.md)
---   Without Cloudflare config, HTTP will be redirected to HTTPS (307 error)
---
-Config.ModoraAPIBase = 'http://api.alpha.modora.xyz'  -- Using HTTP for alpha environment
+-- Must start with http:// or https:// and no trailing slash.
+Config.ModoraAPIBase = 'http://157.180.103.21'
 
--- API Token - Get this from your Modora Dashboard:
--- Dashboard > Guild > FiveM Integration > [Your Server] > API Token
--- Copy the full token including the 'fivem_' prefix if present
-Config.APIToken = 'fivem_6oOHs4aQKvvHjfc3Bimk6xBEJDdyPwBwuZy5TWhdvY1PP99B' -- Your API token here
+-- Optional: Set when using an IP as base URL.
+Config.ModoraHostHeader = 'api.modora.xyz'
+
+-- API Token from Modora Dashboard.
+Config.APIToken = 'your_api_key'
 
 -- ============================================
 -- REPORT COMMAND & KEYBIND
@@ -46,8 +27,8 @@ Config.MaxNearbyPlayers = 5 -- Maximum number of nearby players to show
 -- ============================================
 -- DEBUG & LOCALE
 -- ============================================
-Config.Debug = true -- Set to true for detailed logging
-Config.Locale = 'nl' -- 'nl' or 'en'
+Config.Debug = false -- Set to true for detailed logging
+Config.Locale = 'en' -- 'nl' or 'en'
 
 Config.Messages = {
     ['nl'] = {

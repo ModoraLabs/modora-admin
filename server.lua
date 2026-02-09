@@ -62,6 +62,11 @@ local function buildAuthHeaders()
         ['Accept-Encoding'] = 'identity', -- Disable compression for FiveM compatibility
         ['HTTP-Version'] = '1.1' -- Explicitly request HTTP/1.1 (informational header)
     }
+
+    local hostHeader = Config.ModoraHostHeader
+    if hostHeader and hostHeader ~= '' then
+        headers['Host'] = hostHeader
+    end
     return headers
 end
 
@@ -418,6 +423,17 @@ local function testAPIConnection()
         print('[Modora] Protocol: ' .. (protocol or 'unknown'))
     end
     
+    local testHeaders = {
+        ['User-Agent'] = 'Modora-FiveM-Resource/' .. RESOURCE_VERSION,
+        ['Accept'] = 'application/json',
+        ['Connection'] = 'close',
+        ['Accept-Encoding'] = 'identity'
+    }
+    local hostHeader = Config.ModoraHostHeader
+    if hostHeader and hostHeader ~= '' then
+        testHeaders['Host'] = hostHeader
+    end
+
     PerformHttpRequest(testUrl, function(statusCode, response, responseHeaders)
         -- Convert statusCode to number for comparison
         local statusNum = tonumber(statusCode) or 0
@@ -467,13 +483,85 @@ local function testAPIConnection()
                 print('[Modora] Response: ' .. string.sub(response, 1, 500))
             end
         end
-    end, 'GET', '', {
+    end, 'GET', '', testHeaders)
+end
+
+-- ============================================
+-- DEBUG: RAW HTTP CONNECTIVITY TEST
+-- ============================================
+
+local function testHttpEndpoint(url, label)
+    local headers = {
         ['User-Agent'] = 'Modora-FiveM-Resource/' .. RESOURCE_VERSION,
-        ['Accept'] = 'application/json',
+        ['Accept'] = '*/*',
         ['Connection'] = 'close',
         ['Accept-Encoding'] = 'identity'
-    })
+    }
+
+    print('[Modora] HTTP debug: ' .. label .. ' -> ' .. url)
+
+    PerformHttpRequest(url, function(statusCode, response, responseHeaders)
+        local statusNum = tonumber(statusCode) or 0
+        print('[Modora] HTTP debug result (' .. label .. '): statusCode=' .. tostring(statusCode) .. ' (num=' .. tostring(statusNum) .. ')')
+
+        if response and response ~= '' then
+            print('[Modora] HTTP debug response preview (' .. label .. '): ' .. string.sub(response, 1, 200))
+        end
+
+        if responseHeaders and type(responseHeaders) == 'table' then
+            local location = responseHeaders['Location'] or responseHeaders['location']
+            if location and location ~= '' then
+                print('[Modora] HTTP debug redirect (' .. label .. '): Location=' .. location)
+            end
+        end
+    end, 'GET', '', headers)
 end
+
+RegisterCommand('modora_debug_http', function(source)
+    if source ~= 0 then
+        print('[Modora] HTTP debug can only be run from server console.')
+        return
+    end
+
+    testHttpEndpoint('http://example.com', 'example-http')
+    testHttpEndpoint('http://api.modora.xyz/test', 'modora-http-test')
+    testHttpEndpoint('https://api.modora.xyz/test', 'modora-https-test')
+
+    -- Direct IP test with Host header to bypass DNS/Cloudflare
+    local ip = '157.180.103.21'
+    local function testIpEndpoint(url, label, hostHeader)
+        local headers = {
+            ['User-Agent'] = 'Modora-FiveM-Resource/' .. RESOURCE_VERSION,
+            ['Accept'] = '*/*',
+            ['Connection'] = 'close',
+            ['Accept-Encoding'] = 'identity'
+        }
+        if hostHeader and hostHeader ~= '' then
+            headers['Host'] = hostHeader
+        end
+
+        print('[Modora] HTTP debug: ' .. label .. ' -> ' .. url .. (hostHeader and (' (Host=' .. hostHeader .. ')') or ''))
+
+        PerformHttpRequest(url, function(statusCode, response, responseHeaders)
+            local statusNum = tonumber(statusCode) or 0
+            print('[Modora] HTTP debug result (' .. label .. '): statusCode=' .. tostring(statusCode) .. ' (num=' .. tostring(statusNum) .. ')')
+
+            if response and response ~= '' then
+                print('[Modora] HTTP debug response preview (' .. label .. '): ' .. string.sub(response, 1, 200))
+            end
+
+            if responseHeaders and type(responseHeaders) == 'table' then
+                local location = responseHeaders['Location'] or responseHeaders['location']
+                if location and location ~= '' then
+                    print('[Modora] HTTP debug redirect (' .. label .. '): Location=' .. location)
+                end
+            end
+        end, 'GET', '', headers)
+    end
+
+    testIpEndpoint('http://' .. ip .. '/test', 'modora-ip-http-test', 'api.modora.xyz')
+    testIpEndpoint('https://' .. ip .. '/test', 'modora-ip-https-test', 'api.modora.xyz')
+end, false)
 
 -- ============================================
 -- CONFIGURATION VALIDATION
