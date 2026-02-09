@@ -34,6 +34,7 @@ jobs:
           python3 << 'PYTHON_SCRIPT'
           import re
           import os
+          import textwrap
           
           version = os.environ['VERSION']
           repo = os.environ['REPO']
@@ -54,20 +55,21 @@ jobs:
                   release_notes = f"Release {version}"
               
               # Create full release body
-              release_body = f"""{release_notes}
+              release_body = textwrap.dedent(f"""\
+              {release_notes}
 
-## 📥 Installation
+              ## 📥 Installation
 
-1. Download the latest release from the Assets section below
-2. Extract the zip file
-3. Replace your existing `modora-reports` folder with the new version
-4. Restart the resource: `restart modora-reports`
+              1. Download the latest release from the Assets section below
+              2. Extract the zip file
+              3. Replace your existing `modora-reports` folder with the new version
+              4. Restart the resource: `restart modora-reports`
 
-## 🔗 Links
+              ## 🔗 Links
 
-- [Full Changelog](https://github.com/{repo}/blob/main/CHANGELOG.md)
-- [Documentation](https://github.com/{repo}/blob/main/README.md)
-"""
+              - [Full Changelog](https://github.com/{repo}/blob/main/CHANGELOG.md)
+              - [Documentation](https://github.com/{repo}/blob/main/README.md)
+              """).strip() + "\n"
               
               # Write to file
               with open('release_body.txt', 'w', encoding='utf-8') as f:
@@ -77,20 +79,21 @@ jobs:
           except Exception as e:
               print(f"Error: {e}")
               # Fallback release body
-              fallback_body = f"""Release {version}
+              fallback_body = textwrap.dedent(f"""\
+              Release {version}
 
-## 📥 Installation
+              ## 📥 Installation
 
-1. Download the latest release from the Assets section below
-2. Extract the zip file
-3. Replace your existing `modora-reports` folder with the new version
-4. Restart the resource: `restart modora-reports`
+              1. Download the latest release from the Assets section below
+              2. Extract the zip file
+              3. Replace your existing `modora-reports` folder with the new version
+              4. Restart the resource: `restart modora-reports`
 
-## 🔗 Links
+              ## 🔗 Links
 
-- [Full Changelog](https://github.com/{repo}/blob/main/CHANGELOG.md)
-- [Documentation](https://github.com/{repo}/blob/main/README.md)
-"""
+              - [Full Changelog](https://github.com/{repo}/blob/main/CHANGELOG.md)
+              - [Documentation](https://github.com/{repo}/blob/main/README.md)
+              """).strip() + "\n"
               with open('release_body.txt', 'w', encoding='utf-8') as f:
                   f.write(fallback_body)
           PYTHON_SCRIPT
