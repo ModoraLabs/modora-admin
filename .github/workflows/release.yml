@@ -96,6 +96,16 @@ jobs:
                   f.write(fallback_body)
           PYTHON_SCRIPT
     
+      - name: Create release zip
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          ZIP_NAME="modora-admin-${VERSION}.zip"
+          mkdir -p release_build
+          cp config.lua fxmanifest.lua README.md LICENSE release_build/
+          cp -r client server html release_build/
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md release_build/ || true
+          cd release_build && zip -r "../${ZIP_NAME}" . && cd ..
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -103,12 +113,6 @@ jobs:
           body_path: release_body.txt
           draft: false
           prerelease: false
-          files: |
-            *.lua
-            client/*.lua
-            server/*.lua
-            html/**
-            *.md
-            LICENSE
+          files: modora-admin-${{ steps.get_version.outputs.version }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

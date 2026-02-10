@@ -172,9 +172,12 @@ local function getServerConfig(callback)
         if statusNum == 0 then
             local errorMsg = 'Connection failed after retries.'
             if callback then callback(false, errorMsg) end
-        elseif statusNum == 200 and response then
+        elseif (statusNum == 200 or statusNum == 302) and response and response ~= '' then
+            -- 302: API may return redirect with JSON body (e.g. reverse proxy); parse body as config
             local success, data = pcall(json.decode, response)
-            if success and data then
+            if success and data and (data.serverId or data.reportFormConfig or data.categories) then
+                if callback then callback(true, data) end
+            elseif success and data then
                 if callback then callback(true, data) end
             else
                 if callback then callback(false, 'Failed to parse config response') end
