@@ -270,7 +270,7 @@
                     var input = document.createElement('input');
                     input.type = 'text';
                     input.className = 'modora-input';
-                    input.placeholder = field.placeholder || '';
+                    input.placeholder = field.placeholder || field.label || '';
                     input.value = value != null ? value : '';
                     input.setAttribute('data-field-id', field.id);
                     input.addEventListener('input', function() {
@@ -280,7 +280,7 @@
                 } else if (type === 'textarea') {
                     var ta = document.createElement('textarea');
                     ta.className = 'modora-textarea';
-                    ta.placeholder = field.placeholder || '';
+                    ta.placeholder = field.placeholder || field.label || '';
                     ta.value = value != null ? value : '';
                     ta.setAttribute('data-field-id', field.id);
                     ta.addEventListener('input', function() {
@@ -302,7 +302,7 @@
                     var num = document.createElement('input');
                     num.type = 'number';
                     num.className = 'modora-input';
-                    num.placeholder = field.placeholder || '';
+                    num.placeholder = field.placeholder || field.label || '';
                     num.value = value != null ? value : '';
                     num.setAttribute('data-field-id', field.id);
                     num.addEventListener('input', function() {
@@ -363,18 +363,28 @@
             container.appendChild(wrapFields);
         }
 
+        var rfcLabels = (rfc && typeof rfc === 'object') ? rfc : {};
+        var titleLabel = rfcLabels.titleLabel || 'Title';
+        var titlePlaceholder = rfcLabels.titlePlaceholder || 'Short title';
+        var descriptionLabel = rfcLabels.descriptionLabel || 'Description';
+        var descriptionPlaceholder = rfcLabels.descriptionPlaceholder || 'Describe what happened (min 20 characters)';
+        var evidenceLabel = rfcLabels.evidenceLabel || 'Evidence (URLs)';
+        var addUrlLabel = rfcLabels.addUrlLabel || '+ Add URL';
+        var screenshotLabel = rfcLabels.screenshotLabel || 'Screenshot';
+        var screenshotButtonLabel = rfcLabels.screenshotButtonLabel || 'Take screenshot';
+
         // Subject (title)
         var sectionSub = document.createElement('div');
         sectionSub.className = 'modora-form-section';
         var labelSub = document.createElement('label');
         labelSub.className = 'modora-label';
         labelSub.setAttribute('for', 'subject');
-        labelSub.textContent = 'Title';
+        labelSub.textContent = titleLabel;
         var inputSub = document.createElement('input');
         inputSub.type = 'text';
         inputSub.id = 'subject';
         inputSub.className = 'modora-input';
-        inputSub.placeholder = 'Short title';
+        inputSub.placeholder = titlePlaceholder;
         inputSub.maxLength = 80;
         inputSub.value = state.form.subject || '';
         inputSub.addEventListener('input', function() {
@@ -401,11 +411,11 @@
         var labelDesc = document.createElement('label');
         labelDesc.className = 'modora-label';
         labelDesc.setAttribute('for', 'description');
-        labelDesc.textContent = 'Description';
+        labelDesc.textContent = descriptionLabel;
         var taDesc = document.createElement('textarea');
         taDesc.id = 'description';
         taDesc.className = 'modora-textarea';
-        taDesc.placeholder = 'Describe what happened (min 20 characters)';
+        taDesc.placeholder = descriptionPlaceholder;
         taDesc.value = state.form.description || '';
         taDesc.addEventListener('input', function() {
             state.form.description = this.value;
@@ -430,7 +440,7 @@
         sectionEv.className = 'modora-form-section';
         var labelEv = document.createElement('label');
         labelEv.className = 'modora-label';
-        labelEv.textContent = 'Evidence (URLs)';
+        labelEv.textContent = evidenceLabel;
         sectionEv.appendChild(labelEv);
         var evidenceList = document.createElement('div');
         evidenceList.id = 'evidenceList';
@@ -440,7 +450,7 @@
         btnAddEv.type = 'button';
         btnAddEv.id = 'btnAddEvidence';
         btnAddEv.className = 'modora-btn modora-btn-ghost';
-        btnAddEv.textContent = '+ Add URL';
+        btnAddEv.textContent = addUrlLabel;
         btnAddEv.addEventListener('click', addEvidenceUrl);
         sectionEv.appendChild(btnAddEv);
         container.appendChild(sectionEv);
@@ -452,13 +462,13 @@
             sectionSc.className = 'modora-form-section';
             var labelSc = document.createElement('label');
             labelSc.className = 'modora-label';
-            labelSc.textContent = 'Screenshot';
+            labelSc.textContent = screenshotLabel;
             sectionSc.appendChild(labelSc);
             var screenshotBtn = document.createElement('button');
             screenshotBtn.type = 'button';
             screenshotBtn.id = 'btnTakeScreenshot';
             screenshotBtn.className = 'modora-btn modora-btn-primary';
-            screenshotBtn.textContent = state.form.screenshotUrl ? 'Screenshot added' : '📷 Take screenshot';
+            screenshotBtn.textContent = state.form.screenshotUrl ? (screenshotLabel + ' added') : screenshotButtonLabel;
             if (state.form.screenshotUrl) screenshotBtn.disabled = true;
             screenshotBtn.addEventListener('click', function() {
                 var btn = this;
@@ -466,7 +476,7 @@
                 btn.textContent = 'Taking screenshot...';
                 sendNuiCallback('requestScreenshotUpload', {}).then(function(data) {
                     btn.disabled = false;
-                    btn.textContent = '📷 Take screenshot';
+                    btn.textContent = screenshotButtonLabel;
                     if (data && data.success && data.url) {
                         state.form.screenshotUrl = data.url;
                         if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
@@ -477,7 +487,7 @@
                     }
                 }).catch(function() {
                     btn.disabled = false;
-                    btn.textContent = '📷 Take screenshot';
+                    btn.textContent = screenshotButtonLabel;
                 });
             });
             sectionSc.appendChild(screenshotBtn);
