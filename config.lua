@@ -10,7 +10,9 @@ Config = {}
 Config.ModoraAPIBase = 'http://api.modora.xyz'
 
 -- Verplicht wanneer je een IP als base gebruikt (zodat de server de juiste host ziet).
-Config.ModoraHostHeader = 'api.modora.xyz'
+-- IMPORTANT: Leave EMPTY when using hostname directly (like api.modora.xyz)
+-- Only set this when using IP address as base URL
+Config.ModoraHostHeader = ''
 
 -- API Token from Modora Dashboard.
 Config.APIToken = 'your_api_key'
@@ -23,8 +25,8 @@ Config.APIToken = 'your_api_key'
 -- Convar: set modora_use_alpha 1
 Config.UseAlphaEnvironment = (type(GetConvarInt) == 'function' and GetConvarInt('modora_use_alpha', 0) == 1) or false
 -- Alpha API base (bijv. IP van alpha-server of http://api.alpha.modora.xyz)
-Config.ModoraAPIBaseAlpha = 'http://157.180.103.21'  -- vervang door alpha IP of hostname
-Config.ModoraHostHeaderAlpha = 'api.alpha.modora.xyz' -- bij IP-based: Host header voor alpha
+Config.ModoraAPIBaseAlpha = 'http://alpha-api.modora.xyz'  -- Use hostname for alpha
+Config.ModoraHostHeaderAlpha = '' -- Leave empty when using hostname
 Config.APITokenAlpha = ''  -- API token van de FiveM server in het alpha-dashboard
 
 -- ============================================
