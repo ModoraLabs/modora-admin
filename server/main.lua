@@ -268,6 +268,22 @@ local function submitReport(reportData, callback)
 end
 
 -- ============================================
+-- SERVER CONFIG (for NUI report form – categories + reportFormConfig from dashboard)
+-- ============================================
+
+RegisterNetEvent('modora:getServerConfig')
+AddEventHandler('modora:getServerConfig', function()
+    local source = source
+    getServerConfig(function(success, data)
+        if success and data then
+            TriggerClientEvent('modora:serverConfig', source, data)
+        else
+            TriggerClientEvent('modora:serverConfig', source, nil)
+        end
+    end)
+end)
+
+-- ============================================
 -- REPORT SUBMISSION
 -- ============================================
 

@@ -143,6 +143,70 @@
         });
     }
 
+    function createCustomDropdown(options, selectedValue, placeholder, onChange, inputId) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'modora-dropdown';
+        var selectedOption = options.filter(function(o) { return o.value === selectedValue; })[0];
+        var labelText = selectedOption ? selectedOption.label : placeholder;
+
+        if (inputId) {
+            var hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = inputId;
+            hidden.value = selectedValue || '';
+            wrapper.appendChild(hidden);
+        }
+
+        var trigger = document.createElement('div');
+        trigger.className = 'modora-dropdown-trigger';
+        trigger.setAttribute('tabindex', '0');
+        var triggerLabel = document.createElement('span');
+        triggerLabel.textContent = labelText;
+        trigger.appendChild(triggerLabel);
+        var chevron = document.createElement('span');
+        chevron.className = 'modora-dropdown-chevron';
+        chevron.innerHTML = '▼';
+        trigger.appendChild(chevron);
+        wrapper.appendChild(trigger);
+
+        var menu = document.createElement('div');
+        menu.className = 'modora-dropdown-menu';
+        options.forEach(function(opt) {
+            var optionEl = document.createElement('div');
+            optionEl.className = 'modora-dropdown-option' + (opt.value === selectedValue ? ' modora-dropdown-option-selected' : '');
+            optionEl.setAttribute('data-value', opt.value);
+            optionEl.textContent = opt.label;
+            optionEl.addEventListener('click', function() {
+                var val = this.getAttribute('data-value');
+                triggerLabel.textContent = this.textContent;
+                menu.querySelectorAll('.modora-dropdown-option').forEach(function(o) { o.classList.remove('modora-dropdown-option-selected'); });
+                this.classList.add('modora-dropdown-option-selected');
+                wrapper.classList.remove('modora-dropdown-open');
+                menu.classList.remove('modora-dropdown-open');
+                if (inputId) wrapper.querySelector('input[type=hidden]').value = val;
+                onChange(val);
+            });
+            menu.appendChild(optionEl);
+        });
+        wrapper.appendChild(menu);
+
+        function closeMenu() {
+            wrapper.classList.remove('modora-dropdown-open');
+            menu.classList.remove('modora-dropdown-open');
+            document.removeEventListener('click', closeMenu);
+        }
+
+        trigger.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var isOpen = wrapper.classList.toggle('modora-dropdown-open');
+            menu.classList.toggle('modora-dropdown-open', isOpen);
+            if (isOpen) setTimeout(function() { document.addEventListener('click', closeMenu); }, 0);
+            else document.removeEventListener('click', closeMenu);
+        });
+
+        return wrapper;
+    }
+
     function renderFormContent() {
         var container = document.getElementById('formContent');
         if (!container) return;
@@ -154,35 +218,33 @@
 
         container.innerHTML = '';
 
-        // Category
+        // Category (custom dropdown for dark theme)
         var sectionCat = document.createElement('div');
         sectionCat.className = 'modora-form-section';
         var labelCat = document.createElement('label');
         labelCat.className = 'modora-label';
         labelCat.setAttribute('for', 'category');
         labelCat.textContent = 'Category';
-        var selectCat = document.createElement('select');
-        selectCat.id = 'category';
-        selectCat.className = 'modora-select';
-        selectCat.innerHTML = '<option value="">Select category...</option>';
-        categories.forEach(function(c) {
-            var opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = c.label;
-            if (c.id === state.form.category) opt.selected = true;
-            selectCat.appendChild(opt);
-        });
-        selectCat.addEventListener('change', function() {
-            state.form.category = this.value;
-            state.form.customFields = {};
-            renderFormContent();
-            renderNearbyPlayers();
-        });
+        var categoryOptions = [{ value: '', label: 'Select category...' }].concat(
+            categories.map(function(c) { return { value: c.id, label: c.label }; })
+        );
+        var categoryDropdown = createCustomDropdown(
+            categoryOptions,
+            state.form.category,
+            'Select category...',
+            function(value) {
+                state.form.category = value;
+                state.form.customFields = {};
+                renderFormContent();
+                renderNearbyPlayers();
+            },
+            'category'
+        );
         var errCat = document.createElement('div');
         errCat.id = 'categoryError';
         errCat.className = 'modora-error hidden';
         sectionCat.appendChild(labelCat);
-        sectionCat.appendChild(selectCat);
+        sectionCat.appendChild(categoryDropdown);
         sectionCat.appendChild(errCat);
         container.appendChild(sectionCat);
 
@@ -226,22 +288,16 @@
                     });
                     section.appendChild(ta);
                 } else if (type === 'select') {
-                    var sel = document.createElement('select');
-                    sel.className = 'modora-select';
-                    sel.setAttribute('data-field-id', field.id);
-                    var opts = field.options || [];
-                    sel.innerHTML = '<option value="">Select...</option>';
-                    opts.forEach(function(o) {
-                        var opt = document.createElement('option');
-                        opt.value = o;
-                        opt.textContent = o;
-                        if (o === value) opt.selected = true;
-                        sel.appendChild(opt);
-                    });
-                    sel.addEventListener('change', function() {
-                        state.form.customFields[field.id] = this.value;
-                    });
-                    section.appendChild(sel);
+                    var opts = (field.options || []).map(function(o) { return { value: o, label: o }; });
+                    var selDropdown = createCustomDropdown(
+                        opts,
+                        value,
+                        'Select...',
+                        function(val) { state.form.customFields[field.id] = val; },
+                        null
+                    );
+                    selDropdown.querySelector('.modora-dropdown-trigger').setAttribute('data-field-id', field.id);
+                    section.appendChild(selDropdown);
                 } else if (type === 'number') {
                     var num = document.createElement('input');
                     num.type = 'number';
@@ -278,7 +334,7 @@
                             if (data && data.success && data.url) {
                                 state.form.customFields[field.id] = data.url;
                                 state.form.screenshotUrl = data.url;
-                                state.form.evidenceUrls.push(data.url);
+                                if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
                                 renderFormContent();
                                 renderEvidenceUrls();
                             } else if (data && data.error) {
@@ -413,7 +469,7 @@
                     btn.textContent = '📷 Take screenshot';
                     if (data && data.success && data.url) {
                         state.form.screenshotUrl = data.url;
-                        state.form.evidenceUrls.push(data.url);
+                        if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
                         renderFormContent();
                         renderEvidenceUrls();
                     } else if (data && data.error) {
@@ -596,9 +652,11 @@
         if (!subject) subject = 'Report';
         if (!description) description = '';
 
-        var attachments = state.form.evidenceUrls.filter(Boolean).slice();
-        if (state.form.screenshotUrl && attachments.indexOf(state.form.screenshotUrl) === -1) {
-            attachments.push(state.form.screenshotUrl);
+        var allUrls = state.form.evidenceUrls.filter(Boolean).slice();
+        if (state.form.screenshotUrl && allUrls.indexOf(state.form.screenshotUrl) === -1) allUrls.push(state.form.screenshotUrl);
+        var attachments = [];
+        for (var u = 0; u < allUrls.length; u++) {
+            if (attachments.indexOf(allUrls[u]) === -1) attachments.push(allUrls[u]);
         }
 
         var reportData = {
@@ -615,7 +673,7 @@
             targets: state.form.targets,
             attachments: attachments,
             customFields: state.form.customFields || {},
-            evidenceUrls: state.form.evidenceUrls.filter(Boolean)
+            evidenceUrls: attachments
         };
 
         showView('submitting');
@@ -771,7 +829,7 @@
         } else if (data.action === 'reportSubmitted') {
             handleReportSubmitted(data);
         } else if (data.action === 'screenshotReady' && data.url) {
-            state.form.evidenceUrls.push(data.url);
+            if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
             state.form.screenshotUrl = data.url;
             renderFormContent();
             renderEvidenceUrls();

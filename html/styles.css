@@ -211,6 +211,96 @@ body {
   padding-right: 36px;
 }
 
+/* Custom dropdown (dark surface + cyan accent, no native white list) */
+.modora-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.modora-dropdown-trigger {
+  position: relative;
+  width: 100%;
+  padding: 10px 36px 10px 14px;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.modora-dropdown-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.modora-dropdown-trigger.modora-dropdown-open {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.modora-dropdown-trigger .modora-dropdown-chevron {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  transition: transform var(--transition);
+}
+
+.modora-dropdown-open .modora-dropdown-chevron {
+  transform: translateY(-50%) rotate(180deg);
+  color: var(--accent);
+}
+
+.modora-dropdown-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 100;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  max-height: 220px;
+  overflow-y: auto;
+  display: none;
+}
+
+.modora-dropdown-menu.modora-dropdown-open {
+  display: block;
+}
+
+.modora-dropdown-option {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.modora-dropdown-option:first-child {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.modora-dropdown-option:last-child {
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.modora-dropdown-option:hover,
+.modora-dropdown-option.modora-dropdown-option-selected {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
 .modora-error {
   font-size: 12px;
   color: #f87171;
