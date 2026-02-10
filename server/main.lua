@@ -77,9 +77,10 @@ local function buildAuthHeaders()
         ['Content-Type'] = 'application/json',
         ['Authorization'] = 'Bearer ' .. token,
     }
-    if hostHeader and hostHeader ~= '' then
-        headers['Host'] = hostHeader
-    end
+    -- Don't manually set Host header 
+    -- if hostHeader and hostHeader ~= '' then
+    --     headers['Host'] = hostHeader
+    -- end
     return headers
 end
 
@@ -479,9 +480,10 @@ local function testAPIConnection()
     local testHeaders = {
         ['Accept'] = 'application/json',
     }
-    if hostHeader and hostHeader ~= '' then
-        testHeaders['Host'] = hostHeader
-    end
+    -- Don't manually set Host header 
+    -- if hostHeader and hostHeader ~= '' then
+    --     testHeaders['Host'] = hostHeader
+    -- end
 
     PerformHttpRequest(testUrl, function(statusCode, response, responseHeaders)
         local statusNum = tonumber(statusCode) or 0
@@ -577,9 +579,10 @@ RegisterCommand('modora_debug_http', function(source)
         local headers = {
             ['Accept'] = '*/*',
         }
-        if hostHeader and hostHeader ~= '' then
-            headers['Host'] = hostHeader
-        end
+        -- Don't manually set Host header
+        -- if hostHeader and hostHeader ~= '' then
+        --     headers['Host'] = hostHeader
+        -- end
 
         print('[Modora] HTTP debug: ' .. label .. ' -> ' .. url .. (hostHeader and (' (Host=' .. hostHeader .. ')') or ''))
 
