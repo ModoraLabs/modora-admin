@@ -81,7 +81,7 @@ local function buildAuthHeaders()
         ['Authorization'] = 'Bearer ' .. token,
         ['User-Agent'] = 'Modora-FiveM-Resource/' .. RESOURCE_VERSION,
         ['Accept'] = 'application/json',
-        ['Connection'] = 'close', -- Force HTTP/1.1 connection close
+        ['Connection'] = 'keep-alive', -- Force HTTP/1.1 connection close
         ['Accept-Encoding'] = 'identity', -- Disable compression for FiveM compatibility
         ['HTTP-Version'] = '1.1' -- Explicitly request HTTP/1.1 (informational header)
     }
