@@ -1,6 +1,6 @@
 # Modora FiveM Admin
 
-Version: 1.0.6
+Version: 1.0.7
 Author: ModoraLabs
 
 FiveM resource: **Reports** — in-game report form → Discord ticket.
