@@ -37,6 +37,7 @@ body {
   overflow: hidden;
   color: var(--text);
   font-size: 14px;
+  color-scheme: dark;
 }
 
 .modora-app {
@@ -266,23 +267,42 @@ body {
   right: 0;
   top: calc(100% + 4px);
   z-index: 100;
-  background: var(--surface-elevated);
+  background: #1a1d24 !important;
+  background-color: #1a1d24 !important;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   max-height: 220px;
   overflow-y: auto;
   display: none;
+  color: #ffffff !important;
 }
 
 .modora-dropdown-menu.modora-dropdown-open {
   display: block;
+  background: #1a1d24 !important;
+  background-color: #1a1d24 !important;
+}
+
+.modora-dropdown .modora-dropdown-menu,
+.modora-dropdown .modora-dropdown-option {
+  background-color: #1a1d24 !important;
+  color: #ffffff !important;
+}
+
+.modora-dropdown .modora-dropdown-option:hover,
+.modora-dropdown .modora-dropdown-option.modora-dropdown-option-selected {
+  background: rgba(34, 211, 238, 0.2) !important;
+  background-color: rgba(34, 211, 238, 0.2) !important;
+  color: #22d3ee !important;
 }
 
 .modora-dropdown-option {
   padding: 10px 14px;
   font-size: 14px;
-  color: var(--text);
+  background: #1a1d24 !important;
+  background-color: #1a1d24 !important;
+  color: #ffffff !important;
   cursor: pointer;
   transition: background var(--transition), color var(--transition);
 }
@@ -297,8 +317,9 @@ body {
 
 .modora-dropdown-option:hover,
 .modora-dropdown-option.modora-dropdown-option-selected {
-  background: var(--accent-muted);
-  color: var(--accent);
+  background: rgba(34, 211, 238, 0.2) !important;
+  background-color: rgba(34, 211, 238, 0.2) !important;
+  color: #22d3ee !important;
 }
 
 .modora-error {
