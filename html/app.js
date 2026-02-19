@@ -869,6 +869,9 @@
         var uptimeEl = document.getElementById('stat-uptime');
         var playersEl = document.getElementById('stat-players');
         var resourcesEl = document.getElementById('stat-resources');
+        var memoryEl = document.getElementById('stat-memory');
+        var hostMemoryEl = document.getElementById('stat-hostMemory');
+        var cpuEl = document.getElementById('stat-cpu');
         var versionEl = document.getElementById('stat-version');
         var errorsList = document.getElementById('serverstatsErrors');
         var noErrorsEl = document.getElementById('serverstatsNoErrors');
@@ -877,6 +880,22 @@
         if (uptimeEl) uptimeEl.textContent = formatUptime(stats.uptimeSeconds);
         if (playersEl) playersEl.textContent = (stats.playerCount != null) ? String(stats.playerCount) : '—';
         if (resourcesEl) resourcesEl.textContent = (stats.resourceCount != null) ? String(stats.resourceCount) : '—';
+        if (memoryEl) {
+            if (stats.memoryKb != null && stats.memoryKb >= 0) {
+                var mb = stats.memoryKb / 1024;
+                memoryEl.textContent = (mb >= 1 ? mb.toFixed(1) + ' MB' : stats.memoryKb + ' KB');
+            } else {
+                memoryEl.textContent = '—';
+            }
+        }
+        if (hostMemoryEl) {
+            if (stats.hostMemoryMb != null && stats.hostMemoryMb >= 0) {
+                hostMemoryEl.textContent = stats.hostMemoryLuaFallback ? (stats.hostMemoryMb + ' MB (Lua)') : (stats.hostMemoryMb + ' MB');
+            } else {
+                hostMemoryEl.textContent = '—';
+            }
+        }
+        if (cpuEl) cpuEl.textContent = (stats.hostCpuPercent != null && stats.hostCpuPercent >= 0) ? (stats.hostCpuPercent + '%') : '—';
         if (versionEl) versionEl.textContent = (stats.serverVersion && stats.serverVersion !== '') ? ('Version: ' + escapeText(String(stats.serverVersion).substring(0, 50))) : '';
 
         var errors = stats.lastErrors || [];

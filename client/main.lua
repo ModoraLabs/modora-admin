@@ -3,6 +3,8 @@ local nearbyPlayers = {}
 local playerIdentifiersCache = {}
 local serverConfig = nil
 
+print('[Modora] Client loaded. Config.Debug = ' .. tostring(Config.Debug))
+
 -- Player identifiers are requested from server and cached for the report payload.
 
 RegisterNetEvent('modora:playerIdentifiers')
@@ -253,15 +255,34 @@ RegisterNUICallback('closeServerStats', function(data, cb)
     cb('ok')
 end)
 
+-- Show message in chat and as on-screen notification (works even if chat resource is missing).
+local function serverStatsNotify(msg, isError)
+    TriggerEvent('chat:addMessage', {
+        color = isError and {255, 100, 100} or {100, 255, 100},
+        multiline = true,
+        args = {'[Modora]', msg}
+    })
+    pcall(function()
+        BeginTextCommandThefeedPost("STRING")
+        AddTextComponentSubstringPlayerName(msg)
+        EndTextCommandThefeedPostTicker(false, false)
+    end)
+end
+
 RegisterNetEvent('modora:serverStatsResult')
 AddEventHandler('modora:serverStatsResult', function(payload)
-    if not payload then return end
+    print('[Modora] ServerStats result received (allowed=' .. tostring(payload and payload.allowed) .. ')')
+    if Config.Debug and payload and payload.stats then
+        local s = payload.stats
+        print('[Modora Debug] Stats: players=' .. tostring(s.playerCount) .. ' resources=' .. tostring(s.resourceCount) .. ' memoryKb=' .. tostring(s.memoryKb) .. ' hostMemoryMb=' .. tostring(s.hostMemoryMb) .. ' hostCpuPercent=' .. tostring(s.hostCpuPercent))
+    end
+    if not payload then
+        serverStatsNotify(GetMessage('serverstats_denied'), true)
+        return
+    end
     if not payload.allowed then
-        TriggerEvent('chat:addMessage', {
-            color = {255, 165, 0},
-            multiline = true,
-            args = {'[Modora]', GetMessage('serverstats_denied')}
-        })
+        local msg = GetMessage('serverstats_denied')
+        serverStatsNotify(msg, true)
         return
     end
     isServerStatsOpen = true
@@ -270,14 +291,11 @@ AddEventHandler('modora:serverStatsResult', function(payload)
         action = 'openServerStats',
         stats = payload.stats or {}
     })
-    TriggerEvent('chat:addMessage', {
-        color = {0, 255, 0},
-        multiline = true,
-        args = {'[Modora]', GetMessage('serverstats_opened')}
-    })
+    serverStatsNotify(GetMessage('serverstats_opened'), false)
 end)
 
 RegisterCommand(Config.ServerStatsCommand or 'serverstats', function()
+    print('[Modora] /serverstats command run (Config.Debug=' .. tostring(Config.Debug) .. ')')
     if isServerStatsOpen then
         SetNuiFocus(false, false)
         isServerStatsOpen = false

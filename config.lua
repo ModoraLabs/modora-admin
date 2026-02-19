@@ -10,7 +10,7 @@ Config.ModoraAPIBase = 'http://api.modoralabs.com'
 Config.ModoraHostHeader = ''
 
 -- API token from the Modora dashboard (FiveM → your server → API).
-Config.APIToken = 'your_api_key'
+Config.APIToken = 'fivem_XjtuPzTWLVMhZMkMKSY4Yre8DXLEInPyw4ahC7p50NC8mYRy'
 
 -- ============================================
 -- REPORT COMMAND & KEYBIND
@@ -31,15 +31,23 @@ Config.MaxNearbyPlayers = 5 -- Maximum number of nearby players to show
 Config.ServerStatsCommand = 'serverstats'
 -- TXAdmin permission required to open the panel (e.g. 'console.view', 'all_permissions'). Set in TXAdmin Admin Manager.
 Config.ServerStatsTxAdminPermission = 'console.view'
+-- Path to txAdmin admins.json. Use forward slashes only.
+-- If FXServer can't read this path (e.g. G: not available to the process), copy admins.json into the modora-admin resource folder and we'll use that.
+Config.ServerStatsTxAdminAdminsPath = 'G:/txData/admins.json'
 -- If TXAdmin is not running, allow server stats for nobody (false) or everyone (true). Default: false.
-Config.ServerStatsAllowWithoutTxAdmin = false
--- Optional: grant via ACE in server.cfg e.g. add_ace group.admin modora.serverstats allow (overrides TXAdmin when set).
+Config.ServerStatsAllowWithoutTxAdmin = true
+-- Optional: grant via ACE in server.cfg e.g. add_ace group.admin modora.serverstats allow (checked first).
 Config.ServerStatsAcePermission = 'modora.serverstats'
+-- Optional: file name (inside this resource folder) from which to read actual host RAM/CPU.
+-- FiveM server sandbox blocks io.popen and io.open outside resources, so process memory must be written by an external script.
+-- Use scripts/write_host_stats.bat (Windows) or write_host_stats.sh (Linux); run every 10 sec (Task Scheduler / cron).
+-- Leave empty ('') to show Lua memory only.
+Config.ServerStatsHostStatsFile = 'stats_host.txt'
 
 -- ============================================
 -- LOCALE & LOGGING
 -- ============================================
-Config.Debug = false
+Config.Debug = true
 Config.Locale = 'en'  -- 'nl' or 'en'
 
 Config.Messages = {
