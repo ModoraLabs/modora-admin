@@ -241,6 +241,52 @@ if Config.ReportKeybind and Config.ReportKeybind ~= false then
     RegisterKeyMapping(Config.ReportCommand, 'Open Report Menu', 'keyboard', Config.ReportKeybind)
 end
 
+-- ============================================
+-- SERVER STATS PANEL (/serverstats)
+-- ============================================
+
+local isServerStatsOpen = false
+
+RegisterNUICallback('closeServerStats', function(data, cb)
+    SetNuiFocus(false, false)
+    isServerStatsOpen = false
+    cb('ok')
+end)
+
+RegisterNetEvent('modora:serverStatsResult')
+AddEventHandler('modora:serverStatsResult', function(payload)
+    if not payload then return end
+    if not payload.allowed then
+        TriggerEvent('chat:addMessage', {
+            color = {255, 165, 0},
+            multiline = true,
+            args = {'[Modora]', GetMessage('serverstats_denied')}
+        })
+        return
+    end
+    isServerStatsOpen = true
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = 'openServerStats',
+        stats = payload.stats or {}
+    })
+    TriggerEvent('chat:addMessage', {
+        color = {0, 255, 0},
+        multiline = true,
+        args = {'[Modora]', GetMessage('serverstats_opened')}
+    })
+end)
+
+RegisterCommand(Config.ServerStatsCommand or 'serverstats', function()
+    if isServerStatsOpen then
+        SetNuiFocus(false, false)
+        isServerStatsOpen = false
+        SendNUIMessage({ action = 'closeServerStats' })
+        return
+    end
+    TriggerServerEvent('modora:requestServerStats')
+end, false)
+
 -- ESC closes the report NUI when open.
 
 Citizen.CreateThread(function()
@@ -261,6 +307,13 @@ Citizen.CreateThread(function()
                 SendNUIMessage({
                     action = 'closeReport'
                 })
+            end
+        elseif isServerStatsOpen then
+            DisableControlAction(0, 322, true) -- ESC
+            if IsDisabledControlJustPressed(0, 322) then
+                SetNuiFocus(false, false)
+                isServerStatsOpen = false
+                SendNUIMessage({ action = 'closeServerStats' })
             end
         end
     end

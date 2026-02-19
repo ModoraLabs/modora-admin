@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'ModoraLabs'
 description 'Modora FiveM Admin - Reports (in-game report → Discord ticket)'
-version '1.0.7'
+version '1.08'
 
 dependency 'screenshot-basic'
 

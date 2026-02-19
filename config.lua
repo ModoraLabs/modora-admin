@@ -25,6 +25,18 @@ Config.NearbyRadius = 30.0 -- Radius in meters for nearby players detection
 Config.MaxNearbyPlayers = 5 -- Maximum number of nearby players to show
 
 -- ============================================
+-- SERVER STATS PANEL (/serverstats)
+-- ============================================
+-- Command to open the server stats panel (memory, last 5 errors). Restricted by TXAdmin permission.
+Config.ServerStatsCommand = 'serverstats'
+-- TXAdmin permission required to open the panel (e.g. 'console.view', 'all_permissions'). Set in TXAdmin Admin Manager.
+Config.ServerStatsTxAdminPermission = 'console.view'
+-- If TXAdmin is not running, allow server stats for nobody (false) or everyone (true). Default: false.
+Config.ServerStatsAllowWithoutTxAdmin = false
+-- Optional: grant via ACE in server.cfg e.g. add_ace group.admin modora.serverstats allow (overrides TXAdmin when set).
+Config.ServerStatsAcePermission = 'modora.serverstats'
+
+-- ============================================
 -- LOCALE & LOGGING
 -- ============================================
 Config.Debug = false
@@ -40,6 +52,8 @@ Config.Messages = {
         ['upload_failed'] = 'Upload van bijlage mislukt.',
         ['config_failed'] = 'Modora API-token niet geconfigureerd. Controleer config.lua.',
         ['auth_failed'] = 'Authenticatie mislukt. Controleer het Modora API-token in het dashboard (FiveM → jouw server → API Credentials).',
+        ['serverstats_denied'] = 'Je hebt geen rechten om serverstatistieken te bekijken.',
+        ['serverstats_opened'] = 'Serverstatistieken geopend.',
     },
     ['en'] = {
         ['report_opened'] = 'Report menu opened. Press ESC to close.',
@@ -50,6 +64,8 @@ Config.Messages = {
         ['upload_failed'] = 'Failed to upload attachment.',
         ['config_failed'] = 'Modora API token not configured. Check config.lua.',
         ['auth_failed'] = 'Authentication failed. Check the Modora API token in the dashboard (FiveM → your server → API Credentials).',
+        ['serverstats_denied'] = 'You do not have permission to view server statistics.',
+        ['serverstats_opened'] = 'Server statistics opened.',
     }
 }
 

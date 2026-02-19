@@ -48,6 +48,53 @@
             </div>
         </div>
     </div>
+
+    <!-- Server Stats panel (TXAdmin role-restricted) -->
+    <div id="serverstats-app" class="modora-app modora-serverstats hidden">
+        <div class="modora-backdrop" data-action="closeServerStats" aria-label="Close"></div>
+        <div class="modora-card modora-card-stats" role="dialog" aria-labelledby="serverstats-title" aria-modal="true">
+            <div class="modora-card-header">
+                <button type="button" class="modora-close" id="btnCloseServerStats" aria-label="Close">×</button>
+                <div class="modora-card-title">
+                    <div class="modora-icon" aria-hidden="true">📊</div>
+                    <h1 id="serverstats-title">Server Stats</h1>
+                </div>
+                <p id="serverstats-subtitle" class="modora-card-subtitle">Uptime, resources &amp; recent errors</p>
+            </div>
+            <div class="modora-card-body">
+                <div id="serverstatsContent">
+                    <div class="modora-stats-grid">
+                        <div class="modora-stat-item">
+                            <span class="modora-stat-label">Server</span>
+                            <span id="stat-serverName" class="modora-stat-value">—</span>
+                        </div>
+                        <div class="modora-stat-item">
+                            <span class="modora-stat-label">Uptime</span>
+                            <span id="stat-uptime" class="modora-stat-value">—</span>
+                        </div>
+                        <div class="modora-stat-item">
+                            <span class="modora-stat-label">Players</span>
+                            <span id="stat-players" class="modora-stat-value">—</span>
+                        </div>
+                        <div class="modora-stat-item">
+                            <span class="modora-stat-label">Resources</span>
+                            <span id="stat-resources" class="modora-stat-value">—</span>
+                        </div>
+                    </div>
+                    <p id="stat-version" class="modora-stat-version"></p>
+                    <div class="modora-errors-section">
+                        <h3 class="modora-errors-title">Last 5 errors</h3>
+                        <ul id="serverstatsErrors" class="modora-errors-list"></ul>
+                        <p id="serverstatsNoErrors" class="modora-no-errors hidden">No recent errors recorded.</p>
+                    </div>
+                </div>
+                <div class="modora-form-actions" style="margin-top: 16px;">
+                    <button type="button" id="btnCloseServerStatsFooter" class="modora-btn modora-btn-primary">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>

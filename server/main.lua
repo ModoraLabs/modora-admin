@@ -92,6 +92,95 @@ AddEventHandler('modora:getPlayerIdentifiers', function()
     TriggerClientEvent('modora:playerIdentifiers', source, identifiers)
 end)
 
+-- ============================================
+-- SERVER STATS PANEL (TXAdmin permission + stats + last 5 errors)
+-- ============================================
+
+local serverStatsStartTime = os.time()
+AddEventHandler('onResourceStart', function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        serverStatsStartTime = os.time()
+    end
+end)
+
+local lastErrors = {}
+local MAX_ERRORS = 5
+
+-- Call from other resources or use TriggerEvent('modora:pushServerError', message) to record an error.
+RegisterNetEvent('modora:pushServerError')
+AddEventHandler('modora:pushServerError', function(message)
+    if not message or type(message) ~= 'string' then return end
+    table.insert(lastErrors, 1, os.date('%H:%M:%S') .. ' - ' .. message)
+    while #lastErrors > MAX_ERRORS do
+        table.remove(lastErrors)
+    end
+end)
+
+-- Export so other resources can push errors: exports['modora-admin']:PushServerError('message')
+exports('PushServerError', function(message)
+    TriggerEvent('modora:pushServerError', message)
+end)
+
+local function hasServerStatsPermission(source)
+    if not source or source == 0 then return false end
+    local acePerm = Config.ServerStatsAcePermission or 'modora.serverstats'
+    if acePerm and acePerm ~= '' and IsPlayerAceAllowed(source, acePerm) then
+        return true
+    end
+    local perm = Config.ServerStatsTxAdminPermission or 'console.view'
+    local state = GetResourceState('monitor')
+    if state == 'started' then
+        local ok, has = pcall(function()
+            return exports.monitor:HasPermission(source, perm)
+        end)
+        if ok and has then return true end
+    end
+    state = GetResourceState('txAdmin')
+    if state == 'started' then
+        local ok, has = pcall(function()
+            return exports.txAdmin:HasPermission(source, perm)
+        end)
+        if ok and has then return true end
+    end
+    if Config.ServerStatsAllowWithoutTxAdmin then
+        return true
+    end
+    return false
+end
+
+local function getServerStats()
+    local numResources = 0
+    for i = 0, GetNumResources() - 1 do
+        local name = GetResourceByFindIndex(i)
+        if name and GetResourceState(name) == 'started' then
+            numResources = numResources + 1
+        end
+    end
+    local players = #GetPlayers()
+    local uptimeSec = os.time() - (serverStatsStartTime or os.time())
+    return {
+        uptimeSeconds = uptimeSec,
+        playerCount = players,
+        resourceCount = numResources,
+        serverVersion = GetConvar('version', '') or '',
+        serverName = GetConvar('sv_hostname', '') or GetConvar('sv_projectName', '') or 'Server',
+        lastErrors = lastErrors
+    }
+end
+
+RegisterNetEvent('modora:requestServerStats')
+AddEventHandler('modora:requestServerStats', function()
+    local source = source
+    if not hasServerStatsPermission(source) then
+        TriggerClientEvent('modora:serverStatsResult', source, { allowed = false })
+        return
+    end
+    TriggerClientEvent('modora:serverStatsResult', source, {
+        allowed = true,
+        stats = getServerStats()
+    })
+end)
+
 -- API: config fetch and report submit with retries.
 
 -- HTTP request with optional retries.
