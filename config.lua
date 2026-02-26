@@ -3,7 +3,9 @@ Config = {}
 -- ============================================
 -- API CONFIGURATION (REQUIRED)
 -- ============================================
--- API base URL (no trailing slash). Use hostname or IP; when using IP, set ModoraHostHeader.
+-- API base URL (no trailing slash). Reports go to this URL + /reports.
+-- Production: https://api.modoralabs.com  or your main dashboard URL (e.g. https://modora.xyz)
+-- Alpha: https://alpha-api.modoralabs.com  OR your alpha dashboard URL (e.g. https://alpha.modora.xyz)
 Config.ModoraAPIBase = 'http://api.modoralabs.com'
 
 -- Host header when using an IP as base URL. Leave empty when using hostname.
