@@ -3,6 +3,8 @@ local nearbyPlayers = {}
 local playerIdentifiersCache = {}
 local serverConfig = nil
 
+print('[Modora] Client loaded. Config.Debug = ' .. tostring(Config.Debug))
+
 -- Player identifiers are requested from server and cached for the report payload.
 
 RegisterNetEvent('modora:playerIdentifiers')
@@ -241,6 +243,68 @@ if Config.ReportKeybind and Config.ReportKeybind ~= false then
     RegisterKeyMapping(Config.ReportCommand, 'Open Report Menu', 'keyboard', Config.ReportKeybind)
 end
 
+-- ============================================
+-- SERVER STATS PANEL (/serverstats)
+-- ============================================
+
+local isServerStatsOpen = false
+
+RegisterNUICallback('closeServerStats', function(data, cb)
+    SetNuiFocus(false, false)
+    isServerStatsOpen = false
+    cb('ok')
+end)
+
+-- Show message in chat and as on-screen notification (works even if chat resource is missing).
+local function serverStatsNotify(msg, isError)
+    TriggerEvent('chat:addMessage', {
+        color = isError and {255, 100, 100} or {100, 255, 100},
+        multiline = true,
+        args = {'[Modora]', msg}
+    })
+    pcall(function()
+        BeginTextCommandThefeedPost("STRING")
+        AddTextComponentSubstringPlayerName(msg)
+        EndTextCommandThefeedPostTicker(false, false)
+    end)
+end
+
+RegisterNetEvent('modora:serverStatsResult')
+AddEventHandler('modora:serverStatsResult', function(payload)
+    print('[Modora] ServerStats result received (allowed=' .. tostring(payload and payload.allowed) .. ')')
+    if Config.Debug and payload and payload.stats then
+        local s = payload.stats
+        print('[Modora Debug] Stats: players=' .. tostring(s.playerCount) .. ' resources=' .. tostring(s.resourceCount) .. ' memoryKb=' .. tostring(s.memoryKb) .. ' hostMemoryMb=' .. tostring(s.hostMemoryMb) .. ' hostCpuPercent=' .. tostring(s.hostCpuPercent))
+    end
+    if not payload then
+        serverStatsNotify(GetMessage('serverstats_denied'), true)
+        return
+    end
+    if not payload.allowed then
+        local msg = GetMessage('serverstats_denied')
+        serverStatsNotify(msg, true)
+        return
+    end
+    isServerStatsOpen = true
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = 'openServerStats',
+        stats = payload.stats or {}
+    })
+    serverStatsNotify(GetMessage('serverstats_opened'), false)
+end)
+
+RegisterCommand(Config.ServerStatsCommand or 'serverstats', function()
+    print('[Modora] /serverstats command run (Config.Debug=' .. tostring(Config.Debug) .. ')')
+    if isServerStatsOpen then
+        SetNuiFocus(false, false)
+        isServerStatsOpen = false
+        SendNUIMessage({ action = 'closeServerStats' })
+        return
+    end
+    TriggerServerEvent('modora:requestServerStats')
+end, false)
+
 -- ESC closes the report NUI when open.
 
 Citizen.CreateThread(function()
@@ -261,6 +325,13 @@ Citizen.CreateThread(function()
                 SendNUIMessage({
                     action = 'closeReport'
                 })
+            end
+        elseif isServerStatsOpen then
+            DisableControlAction(0, 322, true) -- ESC
+            if IsDisabledControlJustPressed(0, 322) then
+                SetNuiFocus(false, false)
+                isServerStatsOpen = false
+                SendNUIMessage({ action = 'closeServerStats' })
             end
         end
     end

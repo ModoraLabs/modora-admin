@@ -7,6 +7,7 @@ AddEventHandler('onResourceStart', function(resourceName)
     end
 
     print('[Modora] Resource version (fxmanifest): ' .. RESOURCE_VERSION)
+    print('[Modora] Config.Debug = ' .. tostring(Config.Debug))
 end)
 
 
@@ -90,6 +91,426 @@ AddEventHandler('modora:getPlayerIdentifiers', function()
     local source = source
     local identifiers = GetPlayerIdentifiersTable(source)
     TriggerClientEvent('modora:playerIdentifiers', source, identifiers)
+end)
+
+-- ============================================
+-- SERVER STATS PANEL (TXAdmin permission + stats + last 5 errors)
+-- ============================================
+
+local serverStatsStartTime = os.time()
+AddEventHandler('onResourceStart', function(resourceName)
+    if resourceName == GetCurrentResourceName() then
+        serverStatsStartTime = os.time()
+    end
+end)
+
+local lastErrors = {}
+local MAX_ERRORS = 5
+
+-- Call from other resources or use TriggerEvent('modora:pushServerError', message) to record an error.
+RegisterNetEvent('modora:pushServerError')
+AddEventHandler('modora:pushServerError', function(message)
+    if not message or type(message) ~= 'string' then return end
+    table.insert(lastErrors, 1, os.date('%H:%M:%S') .. ' - ' .. message)
+    while #lastErrors > MAX_ERRORS do
+        table.remove(lastErrors)
+    end
+end)
+
+-- Export so other resources can push errors: exports['modora-admin']:PushServerError('message')
+exports('PushServerError', function(message)
+    TriggerEvent('modora:pushServerError', message)
+end)
+
+local function normalizeId(s)
+    if type(s) ~= 'string' then return nil end
+    s = s:match('^%s*(.-)%s*$') or s
+    return s ~= '' and string.lower(s) or nil
+end
+
+-- Build set of player identifiers (lowercase, trimmed) for matching txAdmin admins.json
+local function getPlayerIdentifierSet(source)
+    local set = {}
+    for i = 0, GetNumPlayerIdentifiers(source) - 1 do
+        local id = normalizeId(GetPlayerIdentifier(source, i))
+        if id then set[id] = true end
+    end
+    return set
+end
+
+-- Load and check txAdmin admins.json (txAdmin does not expose HasPermission to other resources)
+local function hasTxAdminPermissionFromFile(source, requiredPerm)
+    local path = (Config.ServerStatsTxAdminAdminsPath or ''):gsub('^%s*(.-)%s*$', '%1')
+    path = path:gsub('^["\']+', ''):gsub('["\']+$', '')  -- strip surrounding quotes
+    if path == '' then
+        path = (GetConvar('txDataPath', '') or ''):gsub('^%s*(.-)%s*$', '%1')
+        if path ~= '' then
+            path = path:gsub('[/\\]+$', '') .. '/admins.json'
+        end
+    end
+    path = path:gsub('\\', '/')
+    local content = nil
+    if path ~= '' then
+        local ok, data = pcall(function()
+            local f = io.open(path, 'r')
+            if not f then return nil end
+            local out = f:read('*a')
+            f:close()
+            return out
+        end)
+        if ok and data and data ~= '' then content = data end
+    end
+    -- Fallback: read from resource folder (copy G:\txData\admins.json to modora-admin/admins.json)
+    if not content or content == '' then
+        content = LoadResourceFile(GetCurrentResourceName(), 'admins.json')
+    end
+    if not content or content == '' then
+        if Config.Debug then
+            print('[Modora ServerStats] admins.json not found. Copy G:\\txData\\admins.json into the modora-admin resource folder as admins.json')
+        end
+        return false
+    end
+
+    local ok
+    ok, content = pcall(json.decode, content)
+    if not ok or type(content) ~= 'table' then
+        if Config.Debug then
+            print('[Modora ServerStats] admins.json parse failed')
+        end
+        return false
+    end
+
+    local playerIds = getPlayerIdentifierSet(source)
+    if not next(playerIds) then
+        if Config.Debug then
+            print('[Modora ServerStats] player #' .. tostring(source) .. ' has no identifiers')
+        end
+        return false
+    end
+
+    if Config.Debug then
+        local list = {}
+        for id, _ in pairs(playerIds) do list[#list + 1] = id end
+        print('[Modora ServerStats] player #' .. tostring(source) .. ' identifiers: ' .. table.concat(list, ', '))
+    end
+
+    for _, admin in ipairs(content) do
+        if type(admin) ~= 'table' then goto continue end
+        local adminIds = {}
+        if type(admin.providers) == 'table' then
+            for _, prov in pairs(admin.providers) do
+                if type(prov) == 'table' then
+                    local id = normalizeId(prov.identifier)
+                    if id then adminIds[id] = true end
+                end
+            end
+        end
+        local match = false
+        for id, _ in pairs(playerIds) do
+            if adminIds[id] then match = true break end
+        end
+        if not match then goto continue end
+
+        if admin.master == true then
+            if Config.Debug then
+                print('[Modora ServerStats] matched master admin: ' .. tostring(admin.name))
+            end
+            return true
+        end
+        local perms = admin.permissions
+        if type(perms) ~= 'table' then goto continue end
+        for _, p in ipairs(perms) do
+            if p == 'all_permissions' or p == requiredPerm then
+                if Config.Debug then
+                    print('[Modora ServerStats] matched admin with perm: ' .. tostring(admin.name))
+                end
+                return true
+            end
+        end
+        if Config.Debug then
+            print('[Modora ServerStats] matched admin but missing perm: ' .. tostring(admin.name) .. ' (need ' .. tostring(requiredPerm) .. ')')
+        end
+        ::continue::
+    end
+    if Config.Debug then
+        print('[Modora ServerStats] no admin match for player #' .. tostring(source))
+    end
+    return false
+end
+
+local function hasServerStatsPermission(source)
+    if not source or source == 0 then return false end
+    local acePerm = Config.ServerStatsAcePermission or 'modora.serverstats'
+    if acePerm and acePerm ~= '' and IsPlayerAceAllowed(source, acePerm) then
+        if Config.Debug then print('[Modora ServerStats] Permission: ACE allowed (' .. tostring(acePerm) .. ')') end
+        return true
+    end
+    local perm = Config.ServerStatsTxAdminPermission or 'console.view'
+    if hasTxAdminPermissionFromFile(source, perm) then
+        if Config.Debug then print('[Modora ServerStats] Permission: txAdmin admins.json') end
+        return true
+    end
+    local state = GetResourceState('monitor')
+    if state == 'started' then
+        local ok, has = pcall(function()
+            return exports.monitor:HasPermission(source, perm)
+        end)
+        if ok and has then
+            if Config.Debug then print('[Modora ServerStats] Permission: monitor export') end
+            return true
+        end
+    end
+    state = GetResourceState('txAdmin')
+    if state == 'started' then
+        local ok, has = pcall(function()
+            return exports.txAdmin:HasPermission(source, perm)
+        end)
+        if ok and has then
+            if Config.Debug then print('[Modora ServerStats] Permission: txAdmin export') end
+            return true
+        end
+    end
+    if Config.ServerStatsAllowWithoutTxAdmin then
+        if Config.Debug then print('[Modora ServerStats] Permission: ServerStatsAllowWithoutTxAdmin=true') end
+        return true
+    end
+    if Config.Debug then print('[Modora ServerStats] Permission: denied (no match)') end
+    return false
+end
+
+-- Process RAM and CPU. FiveM sandbox blocks io.popen (except ls/dir) and io.open outside resources,
+-- so we try: (1) optional stats file written by external script, (2) OS reads if sandbox allows.
+local processStatsCache = { hostMemoryMb = nil, hostCpuPercent = nil }
+
+local function getProcessMemoryMb()
+    -- (1) Optional stats file written by external script (works with FiveM sandbox)
+    local name = Config.ServerStatsHostStatsFile or 'stats_host.txt'
+    if name and name ~= '' then
+        local content = LoadResourceFile(GetCurrentResourceName(), name)
+        if content and content ~= '' then
+            local mem = content:match('memory_mb=%s*([%d%.]+)')
+            local cpu = content:match('cpu_percent=%s*([%d%.]+)')
+            if cpu then
+                local pct = tonumber(cpu)
+                if pct and pct >= 0 then processStatsCache.hostCpuPercent = math.floor(math.min(100, pct) * 10) / 10 end
+            end
+            if mem then
+                local mb = tonumber(mem)
+                if mb and mb >= 0 then return math.floor(mb * 10) / 10 end
+            end
+        end
+    end
+    -- (2) Linux: /proc/self/status has VmRSS in KB (fails if sandbox blocks io.open)
+    local f = io.open('/proc/self/status', 'r')
+    if f then
+        local content = f:read('*a')
+        f:close()
+        if content then
+            local rss = content:match('VmRSS:%s+(%d+)')
+            if rss then
+                local kb = tonumber(rss)
+                if kb and kb >= 0 then return math.floor((kb / 1024) * 10) / 10 end
+            end
+        end
+    end
+    -- Windows: try tasklist then wmic (use cmd /c so shell runs the command)
+    local function readPipe(cmd)
+        local ok, h = pcall(io.popen, cmd, 'r')
+        if not ok or not h then return nil end
+        local out = h:read('*a')
+        pcall(function() if h and h.close then h:close() end end)
+        return out
+    end
+    local function parseMemFromTasklist(out)
+        if not out then return nil end
+        local line = out:match('FXServer[^\r\n]*')
+        if not line then line = out:match('([^\r\n]+)') end
+        if not line then return nil end
+        -- CSV: "12,345 K" or "12 345 K" in last field
+        local memStr = line:match('"([%d,%s]+)%s*K?"%s*$') or line:match(',%s*"([%d,%s]+)%s*K?"')
+        if memStr then
+            local num = tonumber((memStr:gsub('[%s,]', '')))
+            if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
+        end
+        -- Table format: number followed by " K" at end
+        local num = line:match('(%d[%d,]*)%s*K%s*$')
+        if num then
+            num = tonumber((num:gsub(',', '')))
+            if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
+        end
+        return nil
+    end
+    local out
+    for _, cmd in ipairs({
+        'tasklist /fi "imagename eq FXServer.exe" /fo csv /nh',
+        'cmd /c tasklist /fi "imagename eq FXServer.exe" /fo csv /nh',
+        'tasklist /fi "imagename eq FXServer.exe"',
+        'cmd /c tasklist /fi "imagename eq FXServer.exe"',
+    }) do
+        out = readPipe(cmd)
+        if out and #out > 0 then
+            local mb = parseMemFromTasklist(out)
+            if mb then return mb end
+        end
+    end
+    for _, cmd in ipairs({
+        'wmic process where name="FXServer.exe" get WorkingSetSize /value',
+        'cmd /c wmic process where name="FXServer.exe" get WorkingSetSize /value',
+    }) do
+        out = readPipe(cmd)
+        if out then
+            local bytes = out:match('WorkingSetSize=%s*(%d+)')
+            if bytes then
+                local b = tonumber(bytes)
+                if b and b > 0 then return math.floor((b / (1024 * 1024)) * 10) / 10 end
+            end
+        end
+    end
+    out = readPipe('powershell -NoProfile -Command "(Get-Process -Name FXServer -ErrorAction SilentlyContinue).WorkingSet64"')
+    if out then
+        local bytes = out:match('(%d+)')
+        if bytes then
+            local b = tonumber(bytes)
+            if b and b > 0 then return math.floor((b / (1024 * 1024)) * 10) / 10 end
+        end
+    end
+    return nil
+end
+
+-- CPU % on Linux: sample /proc/self/stat (utime + stime) twice, compute delta.
+local function updateProcessCpuPercent()
+    local f = io.open('/proc/self/stat', 'r')
+    if not f then return end
+    local line = f:read('*l')
+    f:close()
+    if not line then return end
+    -- Format: pid (comm) state ppid ... ; after ") " we have state,ppid,..., utime=12th, stime=13th
+    local afterParen = line:match('%)%s+(.+)$')
+    if not afterParen then return end
+    local fields = {}
+    for v in afterParen:gmatch('%S+') do fields[#fields + 1] = v end
+    if #fields < 14 then return end
+    local utime, stime = fields[12], fields[13]
+    if not utime or not stime then return end
+    local u, s = tonumber(utime), tonumber(stime)
+    if not u or not s then return end
+    local totalTicks = u + s
+    local prev = processStatsCache._lastCpuTicks
+    local prevTs = processStatsCache._lastCpuTs
+    local now = os.time()
+    processStatsCache._lastCpuTicks = totalTicks
+    processStatsCache._lastCpuTs = now
+    if prev and prevTs and (now - prevTs) >= 1 then
+        local tickHz = 100
+        local deltaTicks = totalTicks - prev
+        local deltaSec = now - prevTs
+        if deltaSec > 0 then
+            local pct = (deltaTicks / tickHz) / deltaSec
+            processStatsCache.hostCpuPercent = math.floor(math.min(100, pct) * 10) / 10
+        end
+    end
+end
+
+CreateThread(function()
+    Wait(2000)
+    while true do
+        local ok, mb = pcall(getProcessMemoryMb)
+        if ok and mb ~= nil then processStatsCache.hostMemoryMb = mb end
+        Wait(5000)
+    end
+end)
+
+CreateThread(function()
+    Wait(3000)
+    while true do
+        pcall(updateProcessCpuPercent)
+        Wait(2000)
+    end
+end)
+
+local function getServerStats()
+    local numResources = 0
+    for i = 0, GetNumResources() - 1 do
+        local name = GetResourceByFindIndex(i)
+        if name and GetResourceState(name) == 'started' then
+            numResources = numResources + 1
+        end
+    end
+    local players = #GetPlayers()
+    local uptimeSec = os.time() - (serverStatsStartTime or os.time())
+    local memoryKb = math.floor(collectgarbage('count'))
+    local stats = {
+        uptimeSeconds = uptimeSec,
+        playerCount = players,
+        resourceCount = numResources,
+        memoryKb = memoryKb,
+        serverVersion = GetConvar('version', '') or '',
+        serverName = GetConvar('sv_hostname', '') or GetConvar('sv_projectName', '') or 'Server',
+        lastErrors = lastErrors
+    }
+    if processStatsCache.hostMemoryMb ~= nil then
+        stats.hostMemoryMb = processStatsCache.hostMemoryMb
+    else
+        -- Fallback when OS process RAM unavailable (e.g. io.popen disabled): show Lua heap
+        stats.hostMemoryMb = math.floor((memoryKb / 1024) * 10) / 10
+        stats.hostMemoryLuaFallback = true
+    end
+    if processStatsCache.hostCpuPercent ~= nil then stats.hostCpuPercent = processStatsCache.hostCpuPercent end
+    return stats
+end
+
+RegisterNetEvent('modora:requestServerStats')
+AddEventHandler('modora:requestServerStats', function()
+    local source = source
+    print('[Modora ServerStats] Request from player #' .. tostring(source) .. ' | Config.Debug=' .. tostring(Config.Debug))
+    local function sendResult(allowed, stats)
+        TriggerClientEvent('modora:serverStatsResult', source, {
+            allowed = allowed,
+            stats = stats or {}
+        })
+    end
+    local ok, err = pcall(function()
+        if not source or source == 0 then
+            if Config.Debug then print('[Modora ServerStats] Invalid source') end
+            sendResult(false, nil)
+            return
+        end
+        if not hasServerStatsPermission(source) then
+            local ids = getPlayerIdentifierSet(source)
+            local list = {}
+            for id, _ in pairs(ids) do list[#list + 1] = id end
+            print('[Modora ServerStats] Denied #' .. tostring(source) .. ' | identifiers: ' .. (table.concat(list, ', ') or 'none'))
+            sendResult(false, nil)
+            return
+        end
+        local stats
+        local statsOk, statsErr = pcall(function()
+            stats = getServerStats()
+        end)
+        if not statsOk then
+            print('[Modora ServerStats] getServerStats error: ' .. tostring(statsErr))
+            local memKb = math.floor(collectgarbage('count'))
+            stats = {
+                uptimeSeconds = os.time() - (serverStatsStartTime or os.time()),
+                playerCount = #GetPlayers(),
+                resourceCount = 0,
+                memoryKb = memKb,
+                hostMemoryMb = math.floor((memKb / 1024) * 10) / 10,
+                hostMemoryLuaFallback = true,
+                serverVersion = GetConvar('version', '') or '',
+                serverName = GetConvar('sv_hostname', '') or GetConvar('sv_projectName', '') or 'Server',
+                lastErrors = lastErrors
+            }
+        end
+        if Config.Debug and stats then
+            print('[Modora ServerStats] Sending stats: players=' .. tostring(stats.playerCount) .. ' resources=' .. tostring(stats.resourceCount) .. ' memoryKb=' .. tostring(stats.memoryKb))
+        end
+        sendResult(true, stats)
+    end)
+    if not ok then
+        print('[Modora ServerStats] Handler error: ' .. tostring(err))
+        sendResult(false, nil)
+    end
 end)
 
 -- API: config fetch and report submit with retries.

@@ -843,8 +843,88 @@
             state.form.screenshotUrl = data.url;
             renderFormContent();
             renderEvidenceUrls();
+        } else if (data.action === 'openServerStats') {
+            openServerStatsPanel(data.stats || {});
+        } else if (data.action === 'closeServerStats') {
+            closeServerStatsPanel();
         }
     });
+
+    function formatUptime(seconds) {
+        if (seconds == null || seconds < 0) return '—';
+        var h = Math.floor(seconds / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var s = Math.floor(seconds % 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        if (m > 0) return m + 'm ' + s + 's';
+        return s + 's';
+    }
+
+    function openServerStatsPanel(stats) {
+        var app = document.getElementById('serverstats-app');
+        if (!app) return;
+        app.classList.remove('hidden');
+
+        var serverNameEl = document.getElementById('stat-serverName');
+        var uptimeEl = document.getElementById('stat-uptime');
+        var playersEl = document.getElementById('stat-players');
+        var resourcesEl = document.getElementById('stat-resources');
+        var memoryEl = document.getElementById('stat-memory');
+        var hostMemoryEl = document.getElementById('stat-hostMemory');
+        var cpuEl = document.getElementById('stat-cpu');
+        var versionEl = document.getElementById('stat-version');
+        var errorsList = document.getElementById('serverstatsErrors');
+        var noErrorsEl = document.getElementById('serverstatsNoErrors');
+
+        if (serverNameEl) serverNameEl.textContent = (stats.serverName && stats.serverName !== '') ? escapeText(stats.serverName) : '—';
+        if (uptimeEl) uptimeEl.textContent = formatUptime(stats.uptimeSeconds);
+        if (playersEl) playersEl.textContent = (stats.playerCount != null) ? String(stats.playerCount) : '—';
+        if (resourcesEl) resourcesEl.textContent = (stats.resourceCount != null) ? String(stats.resourceCount) : '—';
+        if (memoryEl) {
+            if (stats.memoryKb != null && stats.memoryKb >= 0) {
+                var mb = stats.memoryKb / 1024;
+                memoryEl.textContent = (mb >= 1 ? mb.toFixed(1) + ' MB' : stats.memoryKb + ' KB');
+            } else {
+                memoryEl.textContent = '—';
+            }
+        }
+        if (hostMemoryEl) {
+            if (stats.hostMemoryMb != null && stats.hostMemoryMb >= 0) {
+                hostMemoryEl.textContent = stats.hostMemoryLuaFallback ? (stats.hostMemoryMb + ' MB (Lua)') : (stats.hostMemoryMb + ' MB');
+            } else {
+                hostMemoryEl.textContent = '—';
+            }
+        }
+        if (cpuEl) cpuEl.textContent = (stats.hostCpuPercent != null && stats.hostCpuPercent >= 0) ? (stats.hostCpuPercent + '%') : '—';
+        if (versionEl) versionEl.textContent = (stats.serverVersion && stats.serverVersion !== '') ? ('Version: ' + escapeText(String(stats.serverVersion).substring(0, 50))) : '';
+
+        var errors = stats.lastErrors || [];
+        if (errorsList) {
+            errorsList.innerHTML = '';
+            errors.slice(0, 5).forEach(function(msg) {
+                var li = document.createElement('li');
+                li.className = 'modora-error-item';
+                li.textContent = escapeText(msg);
+                errorsList.appendChild(li);
+            });
+        }
+        if (noErrorsEl) noErrorsEl.classList.toggle('hidden', errors.length > 0);
+    }
+
+    function closeServerStatsPanel() {
+        var app = document.getElementById('serverstats-app');
+        if (app) app.classList.add('hidden');
+        sendNuiCallback('closeServerStats', {}).catch(function() {});
+    }
+
+    (function bindServerStatsUi() {
+        var btnClose = document.getElementById('btnCloseServerStats');
+        var btnCloseFooter = document.getElementById('btnCloseServerStatsFooter');
+        var backdrop = document.querySelector('#serverstats-app .modora-backdrop');
+        if (btnClose) btnClose.addEventListener('click', closeServerStatsPanel);
+        if (btnCloseFooter) btnCloseFooter.addEventListener('click', closeServerStatsPanel);
+        if (backdrop) backdrop.addEventListener('click', closeServerStatsPanel);
+    })();
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape' && state.view !== 'closed') {
