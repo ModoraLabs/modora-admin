@@ -33,6 +33,7 @@
         { id: 'harassment', label: 'Harassment' },
         { id: 'exploit', label: 'Exploit' },
         { id: 'cheating', label: 'Cheating' },
+        { id: 'Bugs' , label: 'Bugs'},
         { id: 'other', label: 'Other' }
     ];
 
