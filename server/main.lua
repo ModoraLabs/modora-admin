@@ -278,29 +278,79 @@ local function hasServerStatsPermission(source)
     return false
 end
 
--- Process RAM and CPU. FiveM sandbox blocks io.popen (except ls/dir) and io.open outside resources,
--- so we try: (1) optional stats file written by external script, (2) OS reads if sandbox allows.
+-- Process RAM and CPU: read from OS (Linux /proc/self, Windows tasklist).
 local processStatsCache = { hostMemoryMb = nil, hostCpuPercent = nil }
 
-local function getProcessMemoryMb()
-    -- (1) Optional stats file written by external script (works with FiveM sandbox)
-    local name = Config.ServerStatsHostStatsFile or 'stats_host.txt'
-    if name and name ~= '' then
-        local content = LoadResourceFile(GetCurrentResourceName(), name)
-        if content and content ~= '' then
-            local mem = content:match('memory_mb=%s*([%d%.]+)')
-            local cpu = content:match('cpu_percent=%s*([%d%.]+)')
-            if cpu then
-                local pct = tonumber(cpu)
-                if pct and pct >= 0 then processStatsCache.hostCpuPercent = math.floor(math.min(100, pct) * 10) / 10 end
-            end
-            if mem then
-                local mb = tonumber(mem)
-                if mb and mb >= 0 then return math.floor(mb * 10) / 10 end
-            end
-        end
+-- Optional: compute host stats and write stats_host.txt ourselves (no external process).
+local function runHostStatsScript()
+    local resPath = GetResourcePath(GetCurrentResourceName())
+    if not resPath or resPath == '' then
+        return
     end
-    -- (2) Linux: /proc/self/status has VmRSS in KB (fails if sandbox blocks io.open)
+
+    local isWindows = resPath:match('^%a:[/\\]') ~= nil
+
+    -- Normalize base path for building stats_host.txt target.
+    if isWindows then
+        resPath = resPath:gsub('/', '\\')
+        resPath = resPath:gsub('\\+', '\\'):gsub('\\+$', '')
+    else
+        resPath = resPath:gsub('\\', '/')
+        resPath = resPath:gsub('/+', '/'):gsub('/+$', '')
+    end
+
+    local hostStatsPath
+    if isWindows then
+        hostStatsPath = resPath .. '\\stats_host.txt'
+    else
+        hostStatsPath = resPath .. '/stats_host.txt'
+    end
+
+    local memMb = nil
+    local cpuPct = nil
+
+    -- Reuse the same logic used for in-game stats:
+    -- getProcessMemoryMb already handles Linux (/proc/self/status) and Windows (tasklist/wmic/PowerShell).
+    local okMem, m = pcall(getProcessMemoryMb)
+    if okMem and m ~= nil then
+        memMb = math.floor(m)
+    end
+
+    -- CPU percent is only available on Linux via updateProcessCpuPercent (/proc/self/stat).
+    if processStatsCache and processStatsCache.hostCpuPercent ~= nil then
+        cpuPct = math.floor(processStatsCache.hostCpuPercent)
+    end
+
+    if not memMb and not cpuPct then
+        if Config.Debug then
+            print('[Modora ServerStats] runHostStatsScript: no host stats collected')
+        end
+        return
+    end
+
+    local f, err = io.open(hostStatsPath, 'w')
+    if not f then
+        if Config.Debug then
+            print('[Modora ServerStats] Failed to open stats_host.txt for write: ' .. tostring(err))
+        end
+        return
+    end
+    if memMb then
+        f:write('memory_mb=' .. tostring(memMb), '\n')
+    end
+    if cpuPct then
+        f:write('cpu_percent=' .. tostring(cpuPct), '\n')
+    end
+    f:close()
+
+    if Config.Debug then
+        print('[Modora ServerStats] Wrote stats_host.txt at ' .. tostring(hostStatsPath) ..
+            ' | memory_mb=' .. tostring(memMb) .. ' cpu_percent=' .. tostring(cpuPct))
+    end
+end
+
+local function getProcessMemoryMb()
+    -- Linux: /proc/self/status has VmRSS in KB (self = FXServer process)
     local f = io.open('/proc/self/status', 'r')
     if f then
         local content = f:read('*a')
@@ -313,49 +363,37 @@ local function getProcessMemoryMb()
             end
         end
     end
-    -- Windows: try tasklist then wmic (use cmd /c so shell runs the command)
+    -- Windows: try tasklist then wmic
     local function readPipe(cmd)
-        local ok, h = pcall(io.popen, cmd, 'r')
+        local ok, h = pcall(io.popen, cmd)
         if not ok or not h then return nil end
         local out = h:read('*a')
         pcall(function() if h and h.close then h:close() end end)
         return out
     end
-    local function parseMemFromTasklist(out)
-        if not out then return nil end
-        local line = out:match('FXServer[^\r\n]*')
-        if not line then line = out:match('([^\r\n]+)') end
-        if not line then return nil end
-        -- CSV: "12,345 K" or "12 345 K" in last field
-        local memStr = line:match('"([%d,%s]+)%s*K?"%s*$') or line:match(',%s*"([%d,%s]+)%s*K?"')
-        if memStr then
-            local num = tonumber((memStr:gsub('[%s,]', '')))
-            if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
-        end
-        -- Table format: number followed by " K" at end
-        local num = line:match('(%d[%d,]*)%s*K%s*$')
-        if num then
-            num = tonumber((num:gsub(',', '')))
-            if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
-        end
-        return nil
-    end
-    local out
-    for _, cmd in ipairs({
-        'tasklist /fi "imagename eq FXServer.exe" /fo csv /nh',
-        'cmd /c tasklist /fi "imagename eq FXServer.exe" /fo csv /nh',
-        'tasklist /fi "imagename eq FXServer.exe"',
-        'cmd /c tasklist /fi "imagename eq FXServer.exe"',
-    }) do
-        out = readPipe(cmd)
-        if out and #out > 0 then
-            local mb = parseMemFromTasklist(out)
-            if mb then return mb end
+    -- tasklist CSV: last column "12,345 K" or "12 345 K" (locale)
+    local out = readPipe('tasklist /fi "imagename eq FXServer.exe" /fo csv /nh 2>nul')
+    if out then
+        local line = out:match('([^\r\n]+)')
+        if line then
+            -- Last quoted field or last number followed by optional space and K
+            local memStr = line:match('"([%d,%s]+)%s*K?"%s*$') or line:match(',%s*"([%d,%s]+)%s*K?"')
+            if memStr then
+                local num = tonumber((memStr:gsub('[%s,]', '')))
+                if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
+            end
+            -- Non-CSV: number before " K" at end of line
+            local num = line:match('(%d[%d,]*)%s*K%s*$')
+            if num then
+                num = tonumber((num:gsub(',', '')))
+                if num and num > 0 then return math.floor((num / 1024) * 10) / 10 end
+            end
         end
     end
+    -- wmic: WorkingSetSize in bytes (try different quote styles for Windows)
     for _, cmd in ipairs({
-        'wmic process where name="FXServer.exe" get WorkingSetSize /value',
-        'cmd /c wmic process where name="FXServer.exe" get WorkingSetSize /value',
+        'wmic process where name="FXServer.exe" get WorkingSetSize /value 2>nul',
+        "wmic process where name='FXServer.exe' get WorkingSetSize /value 2>nul",
     }) do
         out = readPipe(cmd)
         if out then
@@ -366,7 +404,8 @@ local function getProcessMemoryMb()
             end
         end
     end
-    out = readPipe('powershell -NoProfile -Command "(Get-Process -Name FXServer -ErrorAction SilentlyContinue).WorkingSet64"')
+    -- PowerShell fallback
+    out = readPipe('powershell -NoProfile -Command "(Get-Process -Name FXServer -ErrorAction SilentlyContinue).WorkingSet64" 2>nul')
     if out then
         local bytes = out:match('(%d+)')
         if bytes then
@@ -428,6 +467,57 @@ CreateThread(function()
     end
 end)
 
+-- Periodically run helper script to refresh stats_host.txt (for external panels), if enabled.
+CreateThread(function()
+    local interval = tonumber(Config.HostStatsUpdateIntervalSeconds or 0) or 0
+    if interval <= 0 then
+        return
+    end
+    -- Minimum of 1 second between runs to avoid crazy spam.
+    if interval < 1 then
+        interval = 1
+    end
+    local waitMs = math.floor(interval * 1000)
+    if Config.Debug then
+        print('[Modora ServerStats] Host stats auto-run enabled | interval=' .. tostring(interval) .. 's')
+    end
+    while true do
+        Wait(waitMs)
+        runHostStatsScript()
+    end
+end)
+
+-- Optional: read stats_host.txt (written by helper scripts) and apply to stats table.
+local function applyHostStatsFromFile(stats)
+    if not stats then return end
+    local resPath = GetResourcePath(GetCurrentResourceName())
+    if not resPath or resPath == '' then return end
+    resPath = resPath:gsub('\\', '/')
+    local path = resPath .. '/stats_host.txt'
+    local f = io.open(path, 'r')
+    if not f then return end
+    local content = f:read('*a')
+    f:close()
+    if not content or content == '' then return end
+
+    local memStr = content:match('memory_mb%s*=%s*([%d%.]+)')
+    if memStr then
+        local m = tonumber(memStr)
+        if m and m >= 0 then
+            stats.hostMemoryMb = m
+            stats.hostMemoryLuaFallback = false
+        end
+    end
+
+    local cpuStr = content:match('cpu_percent%s*=%s*([%d%.]+)')
+    if cpuStr then
+        local c = tonumber(cpuStr)
+        if c and c >= 0 then
+            stats.hostCpuPercent = c
+        end
+    end
+end
+
 local function getServerStats()
     local numResources = 0
     for i = 0, GetNumResources() - 1 do
@@ -450,12 +540,13 @@ local function getServerStats()
     }
     if processStatsCache.hostMemoryMb ~= nil then
         stats.hostMemoryMb = processStatsCache.hostMemoryMb
-    else
-        -- Fallback when OS process RAM unavailable (e.g. io.popen disabled): show Lua heap
-        stats.hostMemoryMb = math.floor((memoryKb / 1024) * 10) / 10
         stats.hostMemoryLuaFallback = true
     end
-    if processStatsCache.hostCpuPercent ~= nil then stats.hostCpuPercent = processStatsCache.hostCpuPercent end
+    if processStatsCache.hostCpuPercent ~= nil then
+        stats.hostCpuPercent = processStatsCache.hostCpuPercent
+    end
+    -- Override with helper script values if available (e.g. Windows wmic via write_host_stats.bat)
+    applyHostStatsFromFile(stats)
     return stats
 end
 
@@ -483,20 +574,24 @@ AddEventHandler('modora:requestServerStats', function()
             sendResult(false, nil)
             return
         end
+        -- Optionally refresh stats_host.txt immediately when /serverstats is used.
+        if Config.HostStatsRunOnServerStatsCommand ~= false then
+            if Config.Debug then
+                print('[Modora ServerStats] Triggering host stats helper from /' .. tostring(Config.ServerStatsCommand or 'serverstats'))
+            end
+            runHostStatsScript()
+        end
         local stats
         local statsOk, statsErr = pcall(function()
             stats = getServerStats()
         end)
         if not statsOk then
             print('[Modora ServerStats] getServerStats error: ' .. tostring(statsErr))
-            local memKb = math.floor(collectgarbage('count'))
             stats = {
                 uptimeSeconds = os.time() - (serverStatsStartTime or os.time()),
                 playerCount = #GetPlayers(),
                 resourceCount = 0,
-                memoryKb = memKb,
-                hostMemoryMb = math.floor((memKb / 1024) * 10) / 10,
-                hostMemoryLuaFallback = true,
+                memoryKb = math.floor(collectgarbage('count')),
                 serverVersion = GetConvar('version', '') or '',
                 serverName = GetConvar('sv_hostname', '') or GetConvar('sv_projectName', '') or 'Server',
                 lastErrors = lastErrors

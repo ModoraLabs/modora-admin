@@ -3,16 +3,14 @@ Config = {}
 -- ============================================
 -- API CONFIGURATION (REQUIRED)
 -- ============================================
--- API base URL (no trailing slash). Reports go to this URL + /reports.
--- Production: https://api.modoralabs.com  or your main dashboard URL (e.g. https://modora.xyz)
--- Alpha: https://alpha-api.modoralabs.com  OR your alpha dashboard URL (e.g. https://alpha.modora.xyz)
+-- API base URL (no trailing slash). Use hostname or IP; when using IP, set ModoraHostHeader.
 Config.ModoraAPIBase = 'http://api.modoralabs.com'
 
 -- Host header when using an IP as base URL. Leave empty when using hostname.
 Config.ModoraHostHeader = ''
 
 -- API token from the Modora dashboard (FiveM → your server → API).
-Config.APIToken = 'fivem_XjtuPzTWLVMhZMkMKSY4Yre8DXLEInPyw4ahC7p50NC8mYRy'
+Config.APIToken = ''
 
 -- ============================================
 -- REPORT COMMAND & KEYBIND
@@ -35,16 +33,17 @@ Config.ServerStatsCommand = 'serverstats'
 Config.ServerStatsTxAdminPermission = 'console.view'
 -- Path to txAdmin admins.json. Use forward slashes only.
 -- If FXServer can't read this path (e.g. G: not available to the process), copy admins.json into the modora-admin resource folder and we'll use that.
-Config.ServerStatsTxAdminAdminsPath = 'G:/txData/admins.json'
+Config.ServerStatsTxAdminAdminsPath = ''
 -- If TXAdmin is not running, allow server stats for nobody (false) or everyone (true). Default: false.
 Config.ServerStatsAllowWithoutTxAdmin = true
 -- Optional: grant via ACE in server.cfg e.g. add_ace group.admin modora.serverstats allow (checked first).
 Config.ServerStatsAcePermission = 'modora.serverstats'
--- Optional: file name (inside this resource folder) from which to read actual host RAM/CPU.
--- FiveM server sandbox blocks io.popen and io.open outside resources, so process memory must be written by an external script.
--- Use scripts/write_host_stats.bat (Windows) or write_host_stats.sh (Linux); run every 10 sec (Task Scheduler / cron).
--- Leave empty ('') to show Lua memory only.
-Config.ServerStatsHostStatsFile = 'stats_host.txt'
+-- Server Stats panel gets process RAM and CPU from the OS (Linux: /proc/self, Windows: tasklist).
+-- Optionally also run the helper scripts in scripts/ to write stats_host.txt (for external panels/txAdmin widgets).
+-- How often to run the helper script in the background (seconds). Set to 0 to disable periodic runs.
+Config.HostStatsUpdateIntervalSeconds = 2
+-- Also run the helper script immediately when /serverstats is used (true/false).
+Config.HostStatsRunOnServerStatsCommand = true
 
 -- ============================================
 -- LOCALE & LOGGING

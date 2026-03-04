@@ -1,0 +1,32 @@
+[
+  {
+    "$schema": 1,
+    "name": "Unstoppable2",
+    "master": true,
+    "password_hash": "$2a$11$93Cho3p7Sv2hhVxqvXNm2eGrrsHdaTVkSLzk2.Keeb3rQXSX1WI.K",
+    "providers": {
+      "citizenfx": {
+        "id": "Unstoppable2",
+        "identifier": "fivem:1019964",
+        "data": {}
+      },
+      "discord": {
+        "id": "455899915801853953",
+        "identifier": "discord:455899915801853953",
+        "data": {}
+      }
+    },
+    "permissions": []
+  },
+  {
+    "$schema": 1,
+    "name": "ram221",
+    "master": false,
+    "password_hash": "$2a$11$0j0d5mg1bNYMJHLX0MnHDOBgqoTimTFmljN0Gyh8m2XSQ7BmU.eBm",
+    "password_temporary": true,
+    "providers": {},
+    "permissions": [
+      "all_permissions"
+    ]
+  }
+]

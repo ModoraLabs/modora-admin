@@ -2,8 +2,8 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ModoraLabs'
-description 'Modora FiveM Admin - Reports (in-game report → Discord ticket)'
-version '1.08'
+description 'Modora FiveM Admin - Server stats and angle system'
+version '1.09'
 
 dependency 'screenshot-basic'
 
