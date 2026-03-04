@@ -14,7 +14,7 @@ FiveM resource: **Reports + Server Stats** — in‑game report form → Discord
    ensure modora-admin
    ```
 4. Configure `config.lua` with your API token (from Modora Dashboard → FiveM → your server).
-
+5. Clone your admin.json file into the plugins root DIR
 ## Features
 
 - **Reports:** `/report` (or keybind) opens the report form; submissions create Discord tickets.
