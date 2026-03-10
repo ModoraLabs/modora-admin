@@ -46,6 +46,18 @@ Config.HostStatsUpdateIntervalSeconds = 2
 Config.HostStatsRunOnServerStatsCommand = true
 
 -- ============================================
+-- HEARTBEAT (Dashboard "online" status)
+-- ============================================
+-- Send heartbeat to Modora every N seconds (GET /stats). Set to 0 to disable.
+Config.HeartbeatIntervalSeconds = 120
+
+-- ============================================
+-- MODERATION (Discord → Game: poll pending kick/ban/warn)
+-- ============================================
+-- Poll for pending actions every N seconds. Set to 0 to disable.
+Config.ModerationPollIntervalSeconds = 30
+
+-- ============================================
 -- LOCALE & LOGGING
 -- ============================================
 Config.Debug = true

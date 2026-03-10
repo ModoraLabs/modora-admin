@@ -1,5 +1,7 @@
 local RESOURCE_VERSION = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
-local GITHUB_REPO = 'ModoraLabs/modora-admin'
+-- GitLab project path (URL-encoded for API: modoralabs%2Fmodora-admin)
+local GITLAB_PROJECT = 'modoralabs%2Fmodora-admin'
+local GITLAB_RELEASES_URL = 'https://gitlab.modora.xyz/modoralabs/modora-admin/-/releases'
 
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then
@@ -12,18 +14,19 @@ end)
 
 
 Citizen.CreateThread(function()
-    Citizen.Wait(5000) 
+    Citizen.Wait(5000)
 
     if Config.Debug then
-        print('[Modora] Checking for updates from GitHub...')
+        print('[Modora] Checking for updates from GitLab...')
     end
 
-    PerformHttpRequest('https://api.github.com/repos/' .. GITHUB_REPO .. '/releases/latest', function(statusCode, response, headers)
+    -- GitLab API: list releases (sorted by released_at desc), first = latest
+    PerformHttpRequest('https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1', function(statusCode, response, headers)
         local statusNum = tonumber(statusCode) or 0
         if statusNum == 200 and response then
             local success, data = pcall(json.decode, response)
-            if success and data and data.tag_name then
-                local latestVersion = string.gsub(data.tag_name, '^v', '')
+            if success and data and type(data) == 'table' and #data > 0 and data[1].tag_name then
+                local latestVersion = string.gsub(data[1].tag_name, '^v', '')
                 local currentVersion = RESOURCE_VERSION
 
                 if Config.Debug then
@@ -35,7 +38,7 @@ Citizen.CreateThread(function()
                     print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
                     print('^3[Modora] Current version: ^7' .. currentVersion)
                     print('^3[Modora] Latest version: ^7' .. latestVersion)
-                    print('^3[Modora] Download: https://github.com/' .. GITHUB_REPO .. '/releases/latest^7')
+                    print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
                 else
                     if Config.Debug then
                         print('[Modora] ✅ Resource is up to date!')
@@ -45,7 +48,7 @@ Citizen.CreateThread(function()
         end
     end, 'GET', '', {
         ['User-Agent'] = 'Modora-FiveM-Resource',
-        ['Accept'] = 'application/vnd.github.v3+json'
+        ['Accept'] = 'application/json'
     })
 end)
 
@@ -1009,6 +1012,167 @@ RegisterCommand('modora_debug_http', function(source)
     testIpEndpoint('http://' .. ip .. '/test', 'modora-ip-http-test', 'api.modoralabs.com')
     testIpEndpoint('https://' .. ip .. '/test', 'modora-ip-https-test', 'api.modoralabs.com')
 end, false)
+
+-- ============================================
+-- HEARTBEAT (periodic GET /stats → dashboard last_heartbeat)
+-- ============================================
+
+local function sendHeartbeat()
+    local baseUrl, _, token = getEffectiveAPIConfig()
+    if not baseUrl or baseUrl == '' or not token or token == '' then
+        return
+    end
+    baseUrl = baseUrl:gsub('/+$', '')
+    if not baseUrl:match('^https?://') then
+        return
+    end
+    local url = baseUrl .. '/stats'
+    local headers = buildAuthHeaders()
+    PerformHttpRequest(url, function(statusCode, response)
+        local statusNum = tonumber(statusCode) or 0
+        if statusNum == 200 then
+            if Config.Debug then
+                print('[Modora] Heartbeat OK')
+            end
+        else
+            if Config.Debug then
+                print('[Modora] Heartbeat failed: HTTP ' .. tostring(statusCode))
+            end
+        end
+    end, 'GET', '', headers)
+end
+
+CreateThread(function()
+    local interval = tonumber(Config.HeartbeatIntervalSeconds or 0) or 0
+    if interval <= 0 then
+        if Config.Debug then
+            print('[Modora] Heartbeat disabled (HeartbeatIntervalSeconds = 0)')
+        end
+        return
+    end
+    local waitMs = math.floor(interval * 1000)
+    if Config.Debug then
+        print('[Modora] Heartbeat enabled, interval=' .. tostring(interval) .. 's')
+    end
+    -- First heartbeat after 30s so config/test have run
+    Wait(30000)
+    while true do
+        sendHeartbeat()
+        Wait(waitMs)
+    end
+end)
+
+-- ============================================
+-- MODERATION POLL (Discord → Game: fetch pending kick/ban/warn, execute, then report executed)
+-- ============================================
+
+local function reportModerationExecuted(actionId, success, errMsg)
+    local baseUrl, _, token = getEffectiveAPIConfig()
+    if not baseUrl or baseUrl == '' or not token or token == '' then return end
+    baseUrl = baseUrl:gsub('/+$', '')
+    local url = baseUrl .. '/moderation/executed'
+    local headers = buildAuthHeaders()
+    local body = json.encode({
+        id = actionId,
+        status = success and 'executed' or 'failed',
+        error_message = errMsg or nil
+    })
+    PerformHttpRequest(url, function(statusCode, response)
+        if Config.Debug then
+            print('[Modora] Moderation executed report: HTTP ' .. tostring(statusCode) .. ' for action ' .. tostring(actionId))
+        end
+    end, 'POST', body, headers)
+end
+
+local function getPlayerIdByIdentifier(identifier)
+    -- identifier can be "license:xxx", "discord:xxx", or we have target_fivem_id
+    if not identifier or identifier == '' then return nil end
+    for _, playerId in ipairs(GetPlayers()) do
+        local src = tonumber(playerId)
+        if not src then goto continue end
+        for i = 0, GetNumPlayerIdentifiers(src) - 1 do
+            local id = GetPlayerIdentifier(src, i)
+            if id and string.lower(tostring(id)) == string.lower(tostring(identifier)) then
+                return src
+            end
+        end
+        ::continue::
+    end
+    return nil
+end
+
+local function executeModerationAction(action)
+    local actionId = action.id
+    local actionType = action.action_type
+    local targetFivemId = action.target_fivem_id
+    local targetIdentifier = action.target_identifier
+    local targetName = action.target_name or 'Unknown'
+    local reason = action.reason or 'No reason provided'
+
+    local targetSource = nil
+    if targetFivemId and tonumber(targetFivemId) then
+        targetSource = tonumber(targetFivemId)
+        if not GetPlayerName(targetSource) then
+            targetSource = nil
+        end
+    end
+    if not targetSource and targetIdentifier and targetIdentifier ~= '' then
+        targetSource = getPlayerIdByIdentifier(targetIdentifier)
+    end
+    if not targetSource then
+        reportModerationExecuted(actionId, false, 'Player not online or identifier not found')
+        return
+    end
+
+    if actionType == 'kick' then
+        DropPlayer(targetSource, '[Modora] Kicked: ' .. tostring(reason))
+        reportModerationExecuted(actionId, true, nil)
+    elseif actionType == 'ban' then
+        -- Drop and optionally persist ban via export if another resource provides it
+        DropPlayer(targetSource, '[Modora] Banned: ' .. tostring(reason))
+        reportModerationExecuted(actionId, true, nil)
+    elseif actionType == 'warn' then
+        TriggerClientEvent('modora:receiveWarn', targetSource, reason, action.actor_username)
+        reportModerationExecuted(actionId, true, nil)
+    else
+        reportModerationExecuted(actionId, false, 'Unknown action_type: ' .. tostring(actionType))
+    end
+end
+
+CreateThread(function()
+    local interval = tonumber(Config.ModerationPollIntervalSeconds or 0) or 0
+    if interval <= 0 then
+        if Config.Debug then
+            print('[Modora] Moderation poll disabled (ModerationPollIntervalSeconds = 0)')
+        end
+        return
+    end
+    local waitMs = math.floor(interval * 1000)
+    if Config.Debug then
+        print('[Modora] Moderation poll enabled, interval=' .. tostring(interval) .. 's')
+    end
+    Wait(15000)
+    while true do
+        local baseUrl, _, token = getEffectiveAPIConfig()
+        if baseUrl and baseUrl ~= '' and token and token ~= '' then
+            baseUrl = baseUrl:gsub('/+$', '')
+            local url = baseUrl .. '/moderation/pending'
+            local headers = buildAuthHeaders()
+            PerformHttpRequest(url, function(statusCode, response)
+                local statusNum = tonumber(statusCode) or 0
+                if statusNum == 200 and response and response ~= '' then
+                    local ok, data = pcall(json.decode, response)
+                    if ok and data and data.actions and type(data.actions) == 'table' then
+                        for _, action in ipairs(data.actions) do
+                            executeModerationAction(action)
+                        end
+                    end
+                end
+            end, 'GET', '', headers)
+        end
+        Wait(waitMs)
+    end
+end)
 
 -- ============================================
 -- CONFIGURATION VALIDATION

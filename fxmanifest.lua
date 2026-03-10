@@ -2,8 +2,8 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ModoraLabs'
-description 'Modora FiveM Admin - Server stats and angle system'
-version '1.09'
+description 'Modora FiveM Bridge - Reports, heartbeat, moderation sync (kick/ban/warn from Discord)'
+version '1.1.0'
 
 dependency 'screenshot-basic'
 

@@ -229,7 +229,7 @@ RegisterCommand(Config.ReportCommand, function()
         serverName = serverName,
         cooldownRemaining = 0,
         playerName = GetPlayerName(PlayerId()),
-        version = '1.0.6'
+        version = '1.1.0'
     })
     
     TriggerEvent('chat:addMessage', {
@@ -268,6 +268,21 @@ local function serverStatsNotify(msg, isError)
         EndTextCommandThefeedPostTicker(false, false)
     end)
 end
+
+-- Warn from Discord: show message in chat
+RegisterNetEvent('modora:receiveWarn')
+AddEventHandler('modora:receiveWarn', function(reason, staffName)
+    local msg = '[Modora] Warning'
+    if staffName and staffName ~= '' then
+        msg = msg .. ' (by ' .. tostring(staffName) .. ')'
+    end
+    msg = msg .. ': ' .. tostring(reason or 'No reason provided')
+    TriggerEvent('chat:addMessage', {
+        color = { 255, 165, 0 },
+        multiline = true,
+        args = { '[Modora]', msg }
+    })
+end)
 
 RegisterNetEvent('modora:serverStatsResult')
 AddEventHandler('modora:serverStatsResult', function(payload)
