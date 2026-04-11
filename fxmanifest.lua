@@ -21,6 +21,7 @@ client_scripts {
     'client/reports.lua',
     'client/moderation.lua',
     'client/status.lua',
+    'client/staff.lua',
 }
 
 server_scripts {
@@ -32,6 +33,7 @@ server_scripts {
     'server/stats.lua',
     'server/uploads.lua',
     'server/sync.lua',
+    'server/staff.lua',
     'server/bootstrap.lua',
 }
 

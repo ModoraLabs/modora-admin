@@ -163,13 +163,41 @@ local function sendHeartbeat()
     if not baseUrl:match('^https?://') then
         return
     end
-    local url = baseUrl .. '/stats'
+
+    -- Collect metrics to send with heartbeat
+    local playerCount = #GetPlayers()
+    local resourceCount = 0
+    for i = 0, GetNumResources() - 1 do
+        local name = GetResourceByFindIndex(i)
+        if name and GetResourceState(name) == 'started' then
+            resourceCount = resourceCount + 1
+        end
+    end
+    local memoryMb = nil
+    if processStatsCache and processStatsCache.hostMemoryMb then
+        memoryMb = math.floor(processStatsCache.hostMemoryMb)
+    end
+    local cpuPercent = nil
+    if processStatsCache and processStatsCache.hostCpuPercent then
+        cpuPercent = processStatsCache.hostCpuPercent
+    end
+
+    -- Build URL with query params
+    local url = baseUrl .. '/stats?player_count=' .. tostring(playerCount)
+        .. '&resource_count=' .. tostring(resourceCount)
+    if memoryMb then
+        url = url .. '&memory_mb=' .. tostring(memoryMb)
+    end
+    if cpuPercent then
+        url = url .. '&cpu_percent=' .. tostring(cpuPercent)
+    end
+
     local headers = buildAuthHeaders()
     PerformHttpRequest(url, function(statusCode, response)
         local statusNum = tonumber(statusCode) or 0
         if statusNum == 200 then
             if Config.Debug then
-                print('[Modora] Heartbeat OK')
+                print('[Modora] Heartbeat OK | players=' .. tostring(playerCount) .. ' resources=' .. tostring(resourceCount))
             end
         else
             if Config.Debug then

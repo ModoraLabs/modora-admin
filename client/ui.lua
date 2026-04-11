@@ -94,6 +94,20 @@ Citizen.CreateThread(function()
                 isServerStatsOpen = false
                 SendNUIMessage({ action = 'closeServerStats' })
             end
+        elseif isStaffPanelOpen then
+            DisableControlAction(0, 322, true) -- ESC
+            DisableControlAction(0, 245, true) -- T
+            DisableControlAction(0, 246, true) -- Y
+            DisableControlAction(0, 1, true)
+            DisableControlAction(0, 2, true)
+            DisableControlAction(0, 24, true)
+            DisablePlayerFiring(PlayerId(), true)
+
+            if IsDisabledControlJustPressed(0, 322) then
+                SetNuiFocus(false, false)
+                isStaffPanelOpen = false
+                SendNUIMessage({ action = 'CLOSE_STAFF' })
+            end
         end
     end
 end)

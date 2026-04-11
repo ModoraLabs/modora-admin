@@ -1263,6 +1263,379 @@
     }
 
     // ════════════════════════════════════════
+    // ██ STAFF PANEL VIEW
+    // ════════════════════════════════════════
+
+    var staffState = {
+        tab: 'players',   // 'players' | 'reports' | 'actions'
+        players: [],
+        reportData: null,
+        searchQuery: '',
+        selectedBulk: [],
+        reasonModal: null  // { actionType, targetId, targetName }
+    };
+
+    function openStaffPanel() {
+        state.activeView = 'staff';
+        staffState.tab = 'players';
+        staffState.players = [];
+        staffState.reportData = null;
+        staffState.searchQuery = '';
+        staffState.selectedBulk = [];
+        staffState.reasonModal = null;
+        renderStaffPanel();
+    }
+
+    function closeStaffPanel() {
+        closeAll();
+        staffState.reasonModal = null;
+        sendNuiCallback('closeStaff', {}).catch(function () { });
+    }
+
+    function renderStaffPanel() {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeStaffPanel));
+
+        var modal = el('div', { className: 'modal modal-staff' });
+        modal.appendChild(buildModalHeader('Staff Panel', 'Moderation tools', closeStaffPanel));
+
+        // Tab bar
+        var tabs = el('div', { className: 'staff-tabs' });
+        var tabDefs = [
+            { id: 'players', label: 'Players' },
+            { id: 'reports', label: 'Reports' },
+            { id: 'actions', label: 'Quick Actions' }
+        ];
+        tabDefs.forEach(function (t) {
+            tabs.appendChild(el('button', {
+                className: 'staff-tab' + (staffState.tab === t.id ? ' active' : ''),
+                type: 'button',
+                textContent: t.label,
+                onClick: function () {
+                    staffState.tab = t.id;
+                    renderStaffPanel();
+                }
+            }));
+        });
+        modal.appendChild(tabs);
+
+        // Content
+        var content = el('div', { className: 'staff-content' });
+        switch (staffState.tab) {
+            case 'players':
+                renderStaffPlayersTab(content);
+                break;
+            case 'reports':
+                renderStaffReportsTab(content);
+                break;
+            case 'actions':
+                renderStaffActionsTab(content);
+                break;
+        }
+        modal.appendChild(content);
+
+        appRoot.appendChild(modal);
+
+        // Render reason modal overlay if active
+        if (staffState.reasonModal) {
+            renderReasonModal();
+        }
+    }
+
+    // ── Players Tab ──
+
+    function renderStaffPlayersTab(container) {
+        var toolbar = el('div', { className: 'staff-toolbar' });
+        var toolbarLeft = el('div', { className: 'staff-toolbar-left' });
+
+        var searchInput = el('input', {
+            className: 'staff-search',
+            type: 'text',
+            placeholder: 'Search players...',
+            value: staffState.searchQuery
+        });
+        searchInput.value = staffState.searchQuery;
+        searchInput.addEventListener('input', function () {
+            staffState.searchQuery = this.value;
+            // Re-render just the player list portion
+            var listEl = document.getElementById('staff-player-list');
+            if (listEl) {
+                listEl.innerHTML = '';
+                buildPlayerRows(listEl);
+            }
+            // Update count
+            var countEl = document.getElementById('staff-player-count');
+            if (countEl) {
+                var filtered = getFilteredPlayers();
+                countEl.textContent = filtered.length + ' / ' + staffState.players.length + ' players';
+            }
+        });
+        toolbarLeft.appendChild(searchInput);
+
+        var filtered = getFilteredPlayers();
+        toolbarLeft.appendChild(el('span', {
+            className: 'staff-count',
+            id: 'staff-player-count',
+            textContent: filtered.length + ' / ' + staffState.players.length + ' players'
+        }));
+        toolbar.appendChild(toolbarLeft);
+
+        toolbar.appendChild(el('button', {
+            className: 'btn btn-sm btn-secondary',
+            type: 'button',
+            textContent: 'Refresh',
+            onClick: function () {
+                sendNuiCallback('staffRefreshPlayers', {}).catch(function () { });
+            }
+        }));
+        container.appendChild(toolbar);
+
+        if (staffState.players.length === 0) {
+            container.appendChild(el('div', { className: 'loading-state' }, [
+                el('div', { className: 'spinner' }),
+                el('span', { textContent: 'Loading players...' })
+            ]));
+            return;
+        }
+
+        var listWrapper = el('div', { id: 'staff-player-list' });
+        buildPlayerRows(listWrapper);
+        container.appendChild(listWrapper);
+    }
+
+    function getFilteredPlayers() {
+        var q = staffState.searchQuery.toLowerCase().trim();
+        if (!q) return staffState.players;
+        return staffState.players.filter(function (p) {
+            return (p.name && p.name.toLowerCase().indexOf(q) !== -1) ||
+                   String(p.id).indexOf(q) !== -1;
+        });
+    }
+
+    function buildPlayerRows(container) {
+        var filtered = getFilteredPlayers();
+        if (filtered.length === 0) {
+            container.appendChild(el('div', { className: 'empty-state' }, [
+                el('div', { className: 'empty-state-title', textContent: 'No players found' }),
+                el('div', { className: 'empty-state-text', textContent: staffState.searchQuery ? 'Try a different search term' : 'No players online' })
+            ]));
+            return;
+        }
+        filtered.forEach(function (player) {
+            var pingClass = 'player-row-ping';
+            if (player.ping < 80) pingClass += ' good';
+            else if (player.ping < 150) pingClass += ' medium';
+            else pingClass += ' bad';
+
+            var actions = el('div', { className: 'player-actions' });
+            var actionDefs = [
+                { type: 'tp', label: 'TP', needsReason: false },
+                { type: 'warn', label: 'Warn', needsReason: true },
+                { type: 'kick', label: 'Kick', needsReason: true },
+                { type: 'ban', label: 'Ban', needsReason: true },
+                { type: 'freeze', label: 'Freeze', needsReason: false },
+                { type: 'spectate', label: 'Spec', needsReason: false }
+            ];
+
+            actionDefs.forEach(function (act) {
+                actions.appendChild(el('button', {
+                    className: 'action-btn ' + act.type,
+                    type: 'button',
+                    textContent: act.label,
+                    onClick: function () {
+                        if (act.needsReason) {
+                            staffState.reasonModal = {
+                                actionType: act.type,
+                                targetId: player.id,
+                                targetName: player.name
+                            };
+                            renderReasonModal();
+                        } else {
+                            sendNuiCallback('staffAction', {
+                                type: act.type,
+                                targetId: player.id
+                            }).catch(function () { });
+                        }
+                    }
+                }));
+            });
+
+            var row = el('div', { className: 'player-row' }, [
+                el('span', { className: 'player-row-id', textContent: '#' + player.id }),
+                el('div', { className: 'player-row-info' }, [
+                    el('span', { className: 'player-row-name', textContent: escapeText(player.name) }),
+                    el('div', { className: 'player-row-meta' }, [
+                        el('span', { className: pingClass, textContent: player.ping + 'ms' }),
+                        player.identifiers && player.identifiers.discord
+                            ? el('span', { textContent: 'Discord: ' + escapeText(player.identifiers.discord) })
+                            : null
+                    ])
+                ]),
+                actions
+            ]);
+            container.appendChild(row);
+        });
+    }
+
+    // ── Reason Modal ──
+
+    function renderReasonModal() {
+        // Remove existing overlay if any
+        var existing = document.querySelector('.reason-overlay');
+        if (existing) existing.remove();
+
+        var rm = staffState.reasonModal;
+        if (!rm) return;
+
+        var reasonText = '';
+        var overlay = el('div', { className: 'reason-overlay' });
+        var modal = el('div', { className: 'reason-modal' });
+
+        var title = rm.actionType.charAt(0).toUpperCase() + rm.actionType.slice(1) + ' — ' + escapeText(rm.targetName);
+        modal.appendChild(el('h3', { textContent: title }));
+
+        var textarea = el('textarea', {
+            className: 'form-textarea',
+            placeholder: 'Enter reason...',
+            rows: '3'
+        });
+        textarea.addEventListener('input', function () { reasonText = this.value; });
+        modal.appendChild(textarea);
+
+        var actions = el('div', { className: 'reason-modal-actions' });
+        actions.appendChild(el('button', {
+            className: 'btn btn-sm btn-secondary',
+            type: 'button',
+            textContent: 'Cancel',
+            onClick: function () {
+                staffState.reasonModal = null;
+                overlay.remove();
+            }
+        }));
+        actions.appendChild(el('button', {
+            className: 'btn btn-sm btn-' + (rm.actionType === 'ban' ? 'danger' : 'primary'),
+            type: 'button',
+            textContent: 'Confirm ' + rm.actionType,
+            onClick: function () {
+                sendNuiCallback('staffAction', {
+                    type: rm.actionType,
+                    targetId: rm.targetId,
+                    reason: reasonText || 'No reason provided'
+                }).catch(function () { });
+                staffState.reasonModal = null;
+                overlay.remove();
+            }
+        }));
+        modal.appendChild(actions);
+        overlay.appendChild(modal);
+
+        overlay.addEventListener('click', function (e) {
+            if (e.target === overlay) {
+                staffState.reasonModal = null;
+                overlay.remove();
+            }
+        });
+
+        document.body.appendChild(overlay);
+        setTimeout(function () { textarea.focus(); }, 50);
+    }
+
+    // ── Reports Tab ──
+
+    function renderStaffReportsTab(container) {
+        var toolbar = el('div', { className: 'staff-toolbar' });
+        toolbar.appendChild(el('span', { className: 'staff-count', textContent: 'Report statistics from API' }));
+        toolbar.appendChild(el('button', {
+            className: 'btn btn-sm btn-secondary',
+            type: 'button',
+            textContent: 'Refresh',
+            onClick: function () {
+                sendNuiCallback('staffRefreshReports', {}).catch(function () { });
+            }
+        }));
+        container.appendChild(toolbar);
+
+        if (!staffState.reportData) {
+            container.appendChild(el('div', { className: 'loading-state' }, [
+                el('div', { className: 'spinner' }),
+                el('span', { textContent: 'Loading reports...' })
+            ]));
+            return;
+        }
+
+        var stats = staffState.reportData.stats || {};
+        if (staffState.reportData.error) {
+            container.appendChild(el('div', { className: 'toast toast-error', textContent: staffState.reportData.error }));
+        }
+
+        // Stats summary cards
+        var grid = el('div', { className: 'staff-stats-grid' });
+        var statPairs = [
+            ['Pending', stats.pending_reports || stats.pendingReports || 0],
+            ['Open', stats.open_reports || stats.openReports || 0],
+            ['In Review', stats.in_review_reports || stats.inReviewReports || 0],
+            ['Resolved', stats.resolved_reports || stats.resolvedReports || 0],
+            ['Total', stats.total_reports || stats.totalReports || 0],
+            ['Today', stats.today_reports || stats.todayReports || 0]
+        ];
+        statPairs.forEach(function (pair) {
+            grid.appendChild(el('div', { className: 'staff-stat-card' }, [
+                el('span', { className: 'staff-stat-value', textContent: String(pair[1]) }),
+                el('span', { className: 'staff-stat-label', textContent: pair[0] })
+            ]));
+        });
+        container.appendChild(grid);
+
+        // Hint
+        container.appendChild(el('div', { className: 'review-next-info', textContent: 'Detailed report management is available on the Modora dashboard at modora.gg. This view shows a summary of report statistics.' }));
+    }
+
+    // ── Quick Actions Tab ──
+
+    function renderStaffActionsTab(container) {
+        container.appendChild(el('p', {
+            className: 'form-hint',
+            textContent: 'Common moderation shortcuts. These execute immediately.',
+            style: 'margin-bottom: 16px;'
+        }));
+
+        var actionDefs = [
+            { label: 'Refresh Player List', desc: 'Reload all online players', callback: function () { sendNuiCallback('staffRefreshPlayers', {}).catch(function () { }); showStaffNotification('Player list refreshed', 'info'); } },
+            { label: 'Refresh Reports', desc: 'Reload report statistics from API', callback: function () { sendNuiCallback('staffRefreshReports', {}).catch(function () { }); showStaffNotification('Reports refreshed', 'info'); } }
+        ];
+
+        actionDefs.forEach(function (act) {
+            var card = el('div', {
+                className: 'report-card',
+                onClick: act.callback
+            }, [
+                el('div', { className: 'report-card-subject', textContent: act.label }),
+                el('div', { className: 'report-card-meta' }, [
+                    el('span', { textContent: act.desc })
+                ])
+            ]);
+            container.appendChild(card);
+        });
+    }
+
+    // ── Staff Toast Notification ──
+
+    function showStaffNotification(message, type) {
+        type = type || 'info';
+        // Remove existing toasts
+        document.querySelectorAll('.staff-toast').forEach(function (t) { t.remove(); });
+
+        var toast = el('div', {
+            className: 'staff-toast ' + type,
+            textContent: message
+        });
+        document.body.appendChild(toast);
+        setTimeout(function () {
+            if (toast.parentNode) toast.remove();
+        }, 4000);
+    }
+
+    // ════════════════════════════════════════
     // ██ NUI MESSAGE ROUTER
     // ════════════════════════════════════════
 
@@ -1293,10 +1666,47 @@
                 openStatsView(data);
                 return;
 
+            case 'OPEN_STAFF':
+                openStaffPanel();
+                return;
+
+            case 'CLOSE_STAFF':
+                if (state.activeView === 'staff') closeStaffPanel();
+                return;
+
+            case 'STAFF_PLAYERS_UPDATE':
+                staffState.players = data.players || [];
+                if (state.activeView === 'staff') renderStaffPanel();
+                return;
+
+            case 'STAFF_REPORTS_UPDATE':
+                staffState.reportData = data.data || data;
+                if (state.activeView === 'staff') renderStaffPanel();
+                return;
+
+            case 'STAFF_ACTION_RESULT':
+                if (data.result) {
+                    showStaffNotification(
+                        data.result.message || data.result.error || 'Action completed',
+                        data.result.success ? 'success' : 'error'
+                    );
+                }
+                return;
+
+            case 'STAFF_NOTIFICATION':
+                if (data.notification) {
+                    showStaffNotification(
+                        data.notification.message || 'Notification',
+                        data.notification.type || 'info'
+                    );
+                }
+                return;
+
             case 'CLOSE':
                 if (state.activeView === 'report') sendNuiCallback('closeReport', {}).catch(function () { });
                 else if (state.activeView === 'status') sendNuiCallback('closeStatus', {}).catch(function () { });
                 else if (state.activeView === 'stats') sendNuiCallback('closeServerStats', {}).catch(function () { });
+                else if (state.activeView === 'staff') sendNuiCallback('closeStaff', {}).catch(function () { });
                 closeAll();
                 return;
         }
@@ -1328,10 +1738,18 @@
     // ── Keyboard ──
 
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && state.activeView) {
+        if (e.key === 'Escape') {
+            // Close reason modal first if open
+            if (staffState.reasonModal) {
+                staffState.reasonModal = null;
+                var overlay = document.querySelector('.reason-overlay');
+                if (overlay) overlay.remove();
+                return;
+            }
             if (state.activeView === 'report') closeReportForm();
             else if (state.activeView === 'status') closeStatusView();
             else if (state.activeView === 'stats') closeStatsView();
+            else if (state.activeView === 'staff') closeStaffPanel();
         }
     });
 })();

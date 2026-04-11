@@ -134,6 +134,8 @@ AddEventHandler('modora:reportSubmitted', function(payload)
             multiline = true,
             args = {'[Modora]', string.format(GetMessage('report_sent'), payload.ticketNumber or payload.ticketId or '')}
         })
+        -- Play success notification sound
+        PlaySoundFrontend(-1, 'Text_Arrive_Tone', 'Phone_SoundSet_Default', false)
         -- NUI shows success; user closes manually.
     else
         TriggerEvent('chat:addMessage', {
