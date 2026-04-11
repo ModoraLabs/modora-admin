@@ -1,3 +1,11 @@
+-- ============================================
+-- DEPRECATED: This file has been split into modules.
+-- See: client/bootstrap.lua, client/ui.lua, client/reports.lua,
+--      client/moderation.lua, client/status.lua, client/utils.lua
+-- This stub is kept for backward compatibility during transition.
+-- ============================================
+do return end
+
 local isMenuOpen = false
 local nearbyPlayers = {}
 local playerIdentifiersCache = {}

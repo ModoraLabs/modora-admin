@@ -1,10 +1,10 @@
 # 🚀 Release Guide
 
-This guide explains how to create releases for modora-admin using GitHub Actions.
+This guide explains how to create releases for modora-admin on GitLab.
 
-## 📋 Automatic Release (Recommended)
+## 📋 Release via Git tag
 
-Releases are automatically created when you push a git tag that follows semantic versioning.
+Releases on GitLab are created from git tags (semantic versioning).
 
 ### Steps:
 
@@ -35,21 +35,22 @@ Releases are automatically created when you push a git tag that follows semantic
    git push origin v1.0.2
    ```
 
-5. **GitHub Actions will automatically:**
-   - Extract version from the tag
-   - Extract release notes from CHANGELOG.md
-   - Create a GitHub release with all files
-   - Attach release assets (zip file)
+5. **Create the release on GitLab:**
+   - Go to **Deploy** → **Releases** → **New release**
+   - Select the tag (e.g. `v1.0.2`)
+   - Fill in title and description (copy from CHANGELOG.md)
+   - Add release assets (zip) if needed
+   - Click **Create release**
 
 ## 🔧 Manual Release (Alternative)
 
-If you prefer to create releases manually through GitHub UI:
+If you prefer to create releases fully manually in GitLab:
 
-1. Go to **Releases** → **Draft a new release**
-2. Click **Choose a tag** → Create new tag (e.g., `v1.0.2`)
+1. Go to **Deploy** → **Releases** → **New release**
+2. Create a new tag (e.g., `v1.0.2`) or select an existing one
 3. Fill in release title and description (copy from CHANGELOG.md)
-4. Upload release files or let GitHub auto-generate a zip
-5. Click **Publish release**
+4. Upload release assets (zip) if needed
+5. Click **Create release**
 
 ## 📝 Release Checklist
 
@@ -74,10 +75,10 @@ The automatic release workflow includes:
 - `html/` folder with all assets
 - `LICENSE` file
 
-## 🔗 Workflow Files
+## 🔗 Repository
 
-- **`.github/workflows/release.yml`** - Automatic release on tag push
-- **`.github/workflows/release-manual.yml`** - Manual trigger via GitHub Actions UI
+- **GitLab:** https://gitlab.modora.xyz/modoralabs/modora-admin
+- The in-resource version check uses the GitLab Releases API to compare the current version with the latest release.
 
 
 

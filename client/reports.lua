@@ -1,0 +1,154 @@
+-- ============================================
+-- Modora FiveM Control Center — Client Reports
+-- ============================================
+-- Depends on: client/bootstrap.lua (serverConfig)
+-- Depends on: client/utils.lua (GetNearbyPlayers)
+
+local playerIdentifiersCache = {}
+
+-- Player identifiers are requested from server and cached for the report payload.
+RegisterNetEvent('modora:playerIdentifiers')
+AddEventHandler('modora:playerIdentifiers', function(serverIdentifiers)
+    playerIdentifiersCache = serverIdentifiers or {}
+end)
+
+-- NUI callback: request player data for report form
+RegisterNUICallback('requestPlayerData', function(data, cb)
+    local playerPed = PlayerPedId()
+    local coords = GetEntityCoords(playerPed)
+    local nearbyPlayers = GetNearbyPlayers(coords, Config.NearbyRadius or 30.0, Config.MaxNearbyPlayers or 5)
+
+    playerIdentifiersCache = {}
+    TriggerServerEvent('modora:getPlayerIdentifiers')
+    local waitCount = 0
+    while next(playerIdentifiersCache) == nil and waitCount < 10 do
+        Wait(50)
+        waitCount = waitCount + 1
+    end
+
+    local playerData = {
+        fivemId = GetPlayerServerId(PlayerId()),
+        name = GetPlayerName(PlayerId()),
+        identifiers = playerIdentifiersCache,
+        position = { x = coords.x, y = coords.y, z = coords.z },
+        nearbyPlayers = nearbyPlayers
+    }
+
+    if Config.Debug then
+        print('[Modora] Sending player data to NUI:', json.encode(playerData))
+    end
+
+    cb({ success = true, playerData = playerData })
+end)
+
+-- NUI callback: request server config for report form
+RegisterNUICallback('requestServerConfig', function(data, cb)
+    if serverConfig then
+        cb({ success = true, config = serverConfig })
+    else
+        TriggerServerEvent('modora:getServerConfig')
+        local waitCount = 0
+        while not serverConfig and waitCount < 20 do
+            Wait(100)
+            waitCount = waitCount + 1
+        end
+        if serverConfig then
+            cb({ success = true, config = serverConfig })
+        else
+            cb({ success = false, error = 'Failed to load server configuration' })
+        end
+    end
+end)
+
+-- NUI callback: submit report
+RegisterNUICallback('submitReport', function(data, cb)
+    if not data.category or not data.subject or not data.description then
+        cb({ success = false, error = 'Missing required fields' })
+        return
+    end
+
+    local reportData = {
+        category = data.category,
+        subject = data.subject,
+        description = data.description,
+        priority = data.priority or 'normal',
+        reporter = data.reporter or {},
+        targets = data.targets or {},
+        attachments = data.attachments or {},
+        customFields = data.customFields or {},
+        evidenceUrls = data.evidenceUrls or {}
+    }
+
+    TriggerServerEvent('modora:submitReport', reportData)
+    cb({ success = true, processing = true })
+end)
+
+-- Screenshot: NUI requests upload URL from server; client uploads and sends URL back to NUI.
+local screenshotCb = nil
+
+RegisterNUICallback('requestScreenshotUpload', function(data, cb)
+    screenshotCb = cb
+    TriggerServerEvent('modora:getScreenshotUploadUrl')
+end)
+
+RegisterNetEvent('modora:screenshotUploadUrl')
+AddEventHandler('modora:screenshotUploadUrl', function(uploadUrl)
+    if not uploadUrl or uploadUrl == '' then
+        if screenshotCb then
+            screenshotCb({ success = false, error = 'Could not get upload URL' })
+            screenshotCb = nil
+        end
+        return
+    end
+    local pcallSuccess, err = pcall(function()
+        exports['screenshot-basic']:requestScreenshotUpload(uploadUrl, 'file', { encoding = 'png' }, function(responseBody)
+            local url = nil
+            if responseBody and responseBody ~= '' then
+                local ok, data = pcall(json.decode, responseBody)
+                if ok and data and data.url then
+                    url = data.url
+                end
+            end
+            SendNUIMessage({ action = 'screenshotReady', url = url })
+            if screenshotCb then
+                screenshotCb({ success = (url ~= nil), url = url })
+                screenshotCb = nil
+            end
+        end)
+    end)
+    if not pcallSuccess and screenshotCb then
+        screenshotCb({ success = false, error = 'screenshot-basic not available or failed' })
+        screenshotCb = nil
+    end
+end)
+
+-- Report submitted result from server
+RegisterNetEvent('modora:reportSubmitted')
+AddEventHandler('modora:reportSubmitted', function(payload)
+    if type(payload) ~= 'table' then
+        payload = { success = false, error = 'Invalid response' }
+    end
+    if payload.success then
+        TriggerEvent('chat:addMessage', {
+            color = {0, 255, 0},
+            multiline = true,
+            args = {'[Modora]', string.format(GetMessage('report_sent'), payload.ticketNumber or payload.ticketId or '')}
+        })
+        -- NUI shows success; user closes manually.
+    else
+        TriggerEvent('chat:addMessage', {
+            color = {255, 0, 0},
+            multiline = true,
+            args = {'[Modora]', GetMessage('report_failed') .. (payload.error and (': ' .. payload.error) or '')}
+        })
+    end
+    SendNUIMessage({
+        action = 'reportSubmitted',
+        success = payload.success,
+        ticketNumber = payload.ticketNumber,
+        ticketId = payload.ticketId,
+        ticketUrl = payload.ticketUrl,
+        error = payload.error,
+        cooldownSeconds = payload.cooldownSeconds
+    })
+end)

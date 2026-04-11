@@ -1,3 +1,12 @@
+-- ============================================
+-- DEPRECATED: This file has been split into modules.
+-- See: server/api.lua, server/auth.lua, server/permissions.lua,
+--      server/reports.lua, server/moderation.lua, server/stats.lua,
+--      server/uploads.lua, server/sync.lua, server/bootstrap.lua
+-- This stub is kept for backward compatibility during transition.
+-- ============================================
+do return end
+
 local RESOURCE_VERSION = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
 -- GitLab project path (URL-encoded for API: modoralabs%2Fmodora-admin)
 local GITLAB_PROJECT = 'modoralabs%2Fmodora-admin'

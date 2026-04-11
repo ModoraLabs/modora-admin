@@ -1,4 +1,4 @@
-(function() {
+(function () {
     'use strict';
 
     var RESOURCE_NAME = 'modora-admin';
@@ -10,32 +10,7 @@
         return RESOURCE_NAME;
     }
 
-    var state = {
-        view: 'closed',
-        init: null,
-        playerData: null,
-        serverConfig: null,
-        form: {
-            category: '',
-            subject: '',
-            description: '',
-            evidenceUrls: [],
-            targets: [],
-            customFields: {},
-            screenshotUrl: null
-        },
-        cooldownRemaining: 0,
-        lastSuccess: null
-    };
-
-    var DEFAULT_CATEGORIES = [
-        { id: 'scam', label: 'Scam' },
-        { id: 'harassment', label: 'Harassment' },
-        { id: 'exploit', label: 'Exploit' },
-        { id: 'cheating', label: 'Cheating' },
-        { id: 'Bugs' , label: 'Bugs'},
-        { id: 'other', label: 'Other' }
-    ];
+    // ── Utility ──
 
     function escapeText(str) {
         if (str == null || typeof str !== 'string') return '';
@@ -44,54 +19,185 @@
         return div.innerHTML;
     }
 
-    function showView(viewName) {
-        state.view = viewName;
-        var app = document.getElementById('app');
-        var loading = document.getElementById('stateLoading');
-        var form = document.getElementById('stateForm');
-        var success = document.getElementById('stateSuccess');
-
-        if (!app) return;
-        app.classList.remove('hidden');
-
-        if (loading) loading.classList.add('hidden');
-        if (form) form.classList.add('hidden');
-        if (success) success.classList.add('hidden');
-
-        switch (viewName) {
-            case 'loading':
-                if (loading) loading.classList.remove('hidden');
-                break;
-            case 'form':
-            case 'submitting':
-                if (form) form.classList.remove('hidden');
-                var btn = document.getElementById('btnSubmit');
-                if (btn) btn.disabled = (viewName === 'submitting');
-                break;
-            case 'success':
-            case 'error':
-                if (success) success.classList.remove('hidden');
-                break;
-            case 'closed':
-                app.classList.add('hidden');
-                break;
-        }
-    }
-
     function sendNuiCallback(name, data) {
         data = data || {};
         return fetch('https://' + getParentResourceName() + '/' + name, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
-        }).then(function(res) {
+        }).then(function (res) {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
         });
     }
 
+    function el(tag, attrs, children) {
+        var node = document.createElement(tag);
+        if (attrs) {
+            Object.keys(attrs).forEach(function (k) {
+                if (k === 'className') node.className = attrs[k];
+                else if (k === 'textContent') node.textContent = attrs[k];
+                else if (k === 'innerHTML') node.innerHTML = attrs[k];
+                else if (k.indexOf('on') === 0) node.addEventListener(k.substring(2).toLowerCase(), attrs[k]);
+                else node.setAttribute(k, attrs[k]);
+            });
+        }
+        if (children) {
+            if (!Array.isArray(children)) children = [children];
+            children.forEach(function (c) {
+                if (typeof c === 'string') node.appendChild(document.createTextNode(c));
+                else if (c) node.appendChild(c);
+            });
+        }
+        return node;
+    }
+
+    function formatTimeAgo(ts) {
+        if (!ts) return '';
+        var now = Date.now();
+        var then = typeof ts === 'number' ? ts : new Date(ts).getTime();
+        var diff = Math.max(0, Math.floor((now - then) / 1000));
+        if (diff < 60) return 'just now';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    function formatUptime(seconds) {
+        if (seconds == null || seconds < 0) return '--';
+        var h = Math.floor(seconds / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var s = Math.floor(seconds % 60);
+        if (h > 0) return h + 'h ' + m + 'm';
+        if (m > 0) return m + 'm ' + s + 's';
+        return s + 's';
+    }
+
+    // ── State ──
+
+    var DEFAULT_CATEGORIES = [
+        { id: 'scam', label: 'Scam' },
+        { id: 'harassment', label: 'Harassment' },
+        { id: 'exploit', label: 'Exploit' },
+        { id: 'cheating', label: 'Cheating' },
+        { id: 'bugs', label: 'Bugs' },
+        { id: 'other', label: 'Other' }
+    ];
+
+    var state = {
+        activeView: null, // 'report' | 'status' | 'stats'
+        init: null,
+        playerData: null,
+        serverConfig: null,
+        // Report wizard
+        reportStep: 1,
+        form: {
+            category: '',
+            targetMode: 'none', // 'none' | 'player' | 'manual'
+            targets: [],
+            manualTarget: '',
+            subject: '',
+            description: '',
+            severity: 'low',
+            evidenceUrls: [],
+            screenshotUrl: null,
+            customFields: {}
+        },
+        cooldownRemaining: 0,
+        lastSuccess: null,
+        // Status view
+        reports: [],
+        expandedReportId: null
+    };
+
+    var appRoot = null;
+
+    // ── Rendering core ──
+
+    function clearApp() {
+        if (!appRoot) appRoot = document.getElementById('app');
+        appRoot.innerHTML = '';
+    }
+
+    function closeAll() {
+        state.activeView = null;
+        clearApp();
+    }
+
+    // ── Shared UI builders ──
+
+    function buildBackdrop(onClose) {
+        return el('div', { className: 'backdrop', onClick: onClose });
+    }
+
+    function buildCloseBtn(onClose) {
+        return el('button', { className: 'btn-close', type: 'button', 'aria-label': 'Close', onClick: onClose, innerHTML: '&#215;' });
+    }
+
+    function buildModalHeader(title, subtitle, onClose) {
+        var header = el('div', { className: 'modal-header' }, [
+            buildCloseBtn(onClose),
+            el('div', { className: 'modal-header-title' }, [
+                el('h2', { textContent: title })
+            ])
+        ]);
+        if (subtitle) header.appendChild(el('p', { className: 'modal-subtitle', textContent: subtitle }));
+        return header;
+    }
+
+    function buildDropdown(options, selectedValue, placeholder, onChange) {
+        var wrapper = el('div', { className: 'dropdown' });
+        var selectedOpt = options.filter(function (o) { return o.value === selectedValue; })[0];
+        var labelText = selectedOpt ? selectedOpt.label : placeholder;
+
+        var trigger = el('div', { className: 'dropdown-trigger' + (false ? ' open' : ''), tabindex: '0' });
+        var triggerLabel = el('span', { textContent: labelText });
+        trigger.appendChild(triggerLabel);
+        wrapper.appendChild(trigger);
+
+        var chevron = el('span', { className: 'dropdown-chevron', innerHTML: '&#9660;' });
+        wrapper.appendChild(chevron);
+
+        var menu = el('div', { className: 'dropdown-menu' });
+        options.forEach(function (opt) {
+            var optEl = el('div', {
+                className: 'dropdown-option' + (opt.value === selectedValue ? ' selected' : ''),
+                textContent: opt.label,
+                'data-value': opt.value,
+                onClick: function () {
+                    triggerLabel.textContent = this.textContent;
+                    menu.querySelectorAll('.dropdown-option').forEach(function (o) { o.classList.remove('selected'); });
+                    this.classList.add('selected');
+                    trigger.classList.remove('open');
+                    menu.classList.remove('open');
+                    onChange(this.getAttribute('data-value'));
+                }
+            });
+            menu.appendChild(optEl);
+        });
+        wrapper.appendChild(menu);
+
+        function closeMenu() {
+            trigger.classList.remove('open');
+            menu.classList.remove('open');
+            document.removeEventListener('click', closeMenu);
+        }
+
+        trigger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var isOpen = trigger.classList.toggle('open');
+            menu.classList.toggle('open', isOpen);
+            if (isOpen) setTimeout(function () { document.addEventListener('click', closeMenu); }, 0);
+            else document.removeEventListener('click', closeMenu);
+        });
+
+        return wrapper;
+    }
+
+    // ── Data helpers ──
+
     function requestPlayerData() {
-        return sendNuiCallback('requestPlayerData', {}).then(function(data) {
+        return sendNuiCallback('requestPlayerData', {}).then(function (data) {
             if (data && data.success && data.playerData) {
                 state.playerData = data.playerData;
                 return state.playerData;
@@ -101,7 +207,7 @@
     }
 
     function requestServerConfig() {
-        return sendNuiCallback('requestServerConfig', {}).then(function(data) {
+        return sendNuiCallback('requestServerConfig', {}).then(function (data) {
             if (data && data.success && data.config) {
                 state.serverConfig = data.config;
                 return state.serverConfig;
@@ -113,12 +219,12 @@
     function getCategories() {
         var rfc = state.serverConfig && state.serverConfig.reportFormConfig;
         if (rfc && rfc.categories && rfc.categories.length) {
-            return rfc.categories.map(function(c) {
+            return rfc.categories.map(function (c) {
                 return { id: c.id, label: c.label || c.id, fields: c.fields || [] };
             });
         }
         var cats = (state.serverConfig && state.serverConfig.categories) || DEFAULT_CATEGORIES;
-        return cats.map(function(c) {
+        return cats.map(function (c) {
             var id = typeof c === 'object' ? (c.id || c.value) : c;
             var label = typeof c === 'object' ? (c.label || c.name || id) : id;
             return { id: id, label: label, fields: [] };
@@ -137,801 +243,1095 @@
 
     function sortFields(fields) {
         if (!fields || !fields.length) return [];
-        return fields.slice().sort(function(a, b) {
-            var oa = a.order != null ? a.order : 999;
-            var ob = b.order != null ? b.order : 999;
-            return oa - ob;
+        return fields.slice().sort(function (a, b) {
+            return (a.order != null ? a.order : 999) - (b.order != null ? b.order : 999);
         });
     }
 
-    function createCustomDropdown(options, selectedValue, placeholder, onChange, inputId) {
-        var wrapper = document.createElement('div');
-        wrapper.className = 'modora-dropdown';
-        var selectedOption = options.filter(function(o) { return o.value === selectedValue; })[0];
-        var labelText = selectedOption ? selectedOption.label : placeholder;
+    // ════════════════════════════════════════
+    // ██ REPORT FORM — Multi-Step Wizard
+    // ════════════════════════════════════════
 
-        if (inputId) {
-            var hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.id = inputId;
-            hidden.value = selectedValue || '';
-            wrapper.appendChild(hidden);
+    var STEPS = [
+        { num: 1, label: 'Category' },
+        { num: 2, label: 'Details' },
+        { num: 3, label: 'Evidence' },
+        { num: 4, label: 'Review' }
+    ];
+
+    function openReportForm(initData) {
+        state.activeView = 'report';
+        state.reportStep = 1;
+        state.form = {
+            category: '',
+            targetMode: 'none',
+            targets: [],
+            manualTarget: '',
+            subject: '',
+            description: '',
+            severity: 'low',
+            evidenceUrls: [],
+            screenshotUrl: null,
+            customFields: {}
+        };
+        state.lastSuccess = null;
+
+        if (initData) {
+            state.init = {
+                serverName: initData.serverName || (state.init && state.init.serverName),
+                cooldownRemaining: initData.cooldownRemaining != null ? initData.cooldownRemaining : (state.init && state.init.cooldownRemaining),
+                playerName: initData.playerName || (state.init && state.init.playerName),
+                theme: initData.theme,
+                version: initData.version
+            };
         }
 
-        var trigger = document.createElement('div');
-        trigger.className = 'modora-dropdown-trigger';
-        trigger.setAttribute('tabindex', '0');
-        var triggerLabel = document.createElement('span');
-        triggerLabel.textContent = labelText;
-        trigger.appendChild(triggerLabel);
-        var chevron = document.createElement('span');
-        chevron.className = 'modora-dropdown-chevron';
-        chevron.innerHTML = '▼';
-        trigger.appendChild(chevron);
-        wrapper.appendChild(trigger);
+        renderReportLoading();
 
-        var menu = document.createElement('div');
-        menu.className = 'modora-dropdown-menu';
-        options.forEach(function(opt) {
-            var optionEl = document.createElement('div');
-            optionEl.className = 'modora-dropdown-option' + (opt.value === selectedValue ? ' modora-dropdown-option-selected' : '');
-            optionEl.setAttribute('data-value', opt.value);
-            optionEl.textContent = opt.label;
-            optionEl.addEventListener('click', function() {
-                var val = this.getAttribute('data-value');
-                triggerLabel.textContent = this.textContent;
-                menu.querySelectorAll('.modora-dropdown-option').forEach(function(o) { o.classList.remove('modora-dropdown-option-selected'); });
-                this.classList.add('modora-dropdown-option-selected');
-                wrapper.classList.remove('modora-dropdown-open');
-                menu.classList.remove('modora-dropdown-open');
-                if (inputId) wrapper.querySelector('input[type=hidden]').value = val;
-                onChange(val);
-            });
-            menu.appendChild(optionEl);
+        Promise.all([requestPlayerData(), requestServerConfig()]).then(function () {
+            renderReportWizard();
+        }).catch(function () {
+            renderReportWizard();
         });
-        wrapper.appendChild(menu);
-
-        function closeMenu() {
-            wrapper.classList.remove('modora-dropdown-open');
-            menu.classList.remove('modora-dropdown-open');
-            document.removeEventListener('click', closeMenu);
-        }
-
-        trigger.addEventListener('click', function(e) {
-            e.stopPropagation();
-            var isOpen = wrapper.classList.toggle('modora-dropdown-open');
-            menu.classList.toggle('modora-dropdown-open', isOpen);
-            if (isOpen) setTimeout(function() { document.addEventListener('click', closeMenu); }, 0);
-            else document.removeEventListener('click', closeMenu);
-        });
-
-        return wrapper;
     }
 
-    function renderFormContent() {
-        var container = document.getElementById('formContent');
-        if (!container) return;
+    function closeReportForm() {
+        closeAll();
+        sendNuiCallback('closeReport', {}).catch(function () { });
+    }
 
+    function renderReportLoading() {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeReportForm));
+        var modal = el('div', { className: 'modal modal-report' }, [
+            buildModalHeader('Report', 'Loading...', closeReportForm),
+            el('div', { className: 'modal-body' }, [
+                el('div', { className: 'loading-state' }, [
+                    el('div', { className: 'spinner' }),
+                    el('span', { textContent: 'Loading report form...' })
+                ])
+            ])
+        ]);
+        appRoot.appendChild(modal);
+    }
+
+    function renderReportWizard() {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeReportForm));
+
+        var subtitle = 'Submit a report to staff';
+        if (state.init && state.init.serverName) subtitle += ' - ' + state.init.serverName;
+
+        var modal = el('div', { className: 'modal modal-report' });
+        modal.appendChild(buildModalHeader('Report', subtitle, closeReportForm));
+        modal.appendChild(buildStepIndicator());
+
+        var body = el('div', { className: 'modal-body' });
+        body.appendChild(renderCurrentStep());
+        modal.appendChild(body);
+        modal.appendChild(buildWizardFooter());
+
+        appRoot.appendChild(modal);
+    }
+
+    function renderReportSuccess(ticketNumber, ticketUrl) {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeReportForm));
+        var msg = ticketNumber != null
+            ? 'Your report was submitted. Ticket #' + escapeText(String(ticketNumber))
+            : 'Your report was submitted successfully.';
+
+        var modal = el('div', { className: 'modal modal-report' }, [
+            buildModalHeader('Report', null, closeReportForm),
+            el('div', { className: 'modal-body' }, [
+                el('div', { className: 'success-state' }, [
+                    el('div', { className: 'success-icon', textContent: '\u2713' }),
+                    el('h3', { textContent: 'Report sent' }),
+                    el('p', { textContent: msg }),
+                    el('button', { className: 'btn btn-primary', type: 'button', textContent: 'Close', onClick: closeReportForm })
+                ])
+            ])
+        ]);
+        appRoot.appendChild(modal);
+    }
+
+    function renderReportError(errorMsg) {
+        // Re-render wizard with error toast
+        renderReportWizard();
+        var body = appRoot.querySelector('.modal-body');
+        if (body) {
+            var toast = el('div', { className: 'toast toast-error', textContent: errorMsg || 'Report could not be sent.' });
+            body.insertBefore(toast, body.firstChild);
+        }
+    }
+
+    function buildStepIndicator() {
+        var container = el('div', { className: 'step-indicator' });
+        STEPS.forEach(function (step) {
+            var cls = 'step-item';
+            if (step.num < state.reportStep) cls += ' completed';
+            else if (step.num === state.reportStep) cls += ' active';
+
+            var dotContent = step.num < state.reportStep ? '\u2713' : String(step.num);
+            var item = el('div', { className: cls }, [
+                el('div', { className: 'step-dot', textContent: dotContent }),
+                el('span', { className: 'step-label', textContent: step.label })
+            ]);
+            container.appendChild(item);
+        });
+        return container;
+    }
+
+    function buildWizardFooter() {
+        var footer = el('div', { className: 'modal-footer' });
+        var hint = el('div', { className: 'modal-footer-hint', textContent: 'Reports are reviewed by staff. Do not abuse; rate limits apply.' });
+        var actions = el('div', { className: 'modal-footer-actions' });
+
+        if (state.reportStep > 1) {
+            actions.appendChild(el('button', {
+                className: 'btn btn-secondary', type: 'button', textContent: 'Back',
+                onClick: function () { state.reportStep--; renderReportWizard(); }
+            }));
+        } else {
+            actions.appendChild(el('button', {
+                className: 'btn btn-secondary', type: 'button', textContent: 'Cancel',
+                onClick: closeReportForm
+            }));
+        }
+
+        if (state.reportStep < 4) {
+            actions.appendChild(el('button', {
+                className: 'btn btn-primary', type: 'button', textContent: 'Next',
+                onClick: function () {
+                    if (validateStep(state.reportStep)) {
+                        state.reportStep++;
+                        renderReportWizard();
+                    }
+                }
+            }));
+        } else {
+            actions.appendChild(el('button', {
+                className: 'btn btn-primary', type: 'button', textContent: 'Submit report',
+                onClick: submitReport
+            }));
+        }
+
+        footer.appendChild(hint);
+        footer.appendChild(actions);
+        return footer;
+    }
+
+    function renderCurrentStep() {
+        var content = el('div', { className: 'step-content' });
+        switch (state.reportStep) {
+            case 1: renderStep1(content); break;
+            case 2: renderStep2(content); break;
+            case 3: renderStep3(content); break;
+            case 4: renderStep4(content); break;
+        }
+        return content;
+    }
+
+    // ── Step 1: Category & Target ──
+
+    function renderStep1(container) {
         var categories = getCategories();
+
+        // Intro text from server config
         var rfc = state.serverConfig && state.serverConfig.reportFormConfig;
+        if (rfc && rfc.introText) {
+            container.appendChild(el('p', { className: 'form-hint', textContent: String(rfc.introText).trim(), style: 'margin-bottom: 14px;' }));
+        }
+
+        // Category selection
+        var catGroup = el('div', { className: 'form-group' });
+        catGroup.appendChild(el('label', { className: 'form-label', innerHTML: 'Category <span class="required">*</span>' }));
+
+        if (categories.length <= 8) {
+            // Button grid for small number of categories
+            var grid = el('div', { className: 'category-grid' });
+            categories.forEach(function (cat) {
+                grid.appendChild(el('button', {
+                    className: 'category-btn' + (state.form.category === cat.id ? ' selected' : ''),
+                    type: 'button',
+                    textContent: cat.label,
+                    'data-value': cat.id,
+                    onClick: function () {
+                        state.form.category = cat.id;
+                        state.form.customFields = {};
+                        renderReportWizard();
+                    }
+                }));
+            });
+            catGroup.appendChild(grid);
+        } else {
+            // Dropdown for many categories
+            var opts = categories.map(function (c) { return { value: c.id, label: c.label }; });
+            catGroup.appendChild(buildDropdown(opts, state.form.category, 'Select category...', function (val) {
+                state.form.category = val;
+                state.form.customFields = {};
+                renderReportWizard();
+            }));
+        }
+
+        catGroup.appendChild(el('div', { className: 'form-error hidden', id: 'err-category' }));
+        container.appendChild(catGroup);
+
+        // Target player selection
+        var players = (state.playerData && state.playerData.nearbyPlayers) || [];
+        var targetGroup = el('div', { className: 'form-group' });
+        targetGroup.appendChild(el('label', { className: 'form-label', textContent: 'Target player' }));
+
+        // No specific player button
+        var noneBtn = el('button', {
+            className: 'player-none-btn' + (state.form.targetMode === 'none' ? ' selected' : ''),
+            type: 'button',
+            textContent: 'No specific player',
+            onClick: function () {
+                state.form.targetMode = 'none';
+                state.form.targets = [];
+                state.form.manualTarget = '';
+                renderReportWizard();
+            }
+        });
+        targetGroup.appendChild(noneBtn);
+
+        if (players.length > 0) {
+            targetGroup.appendChild(el('label', { className: 'form-hint', textContent: 'Nearby players:', style: 'margin-bottom: 6px; display: block;' }));
+            var list = el('div', { className: 'player-list' });
+            players.forEach(function (p) {
+                var isSelected = state.form.targets.some(function (t) { return t.fivemId === p.fivemId; });
+                var option = el('label', { className: 'player-option' });
+                var cb = el('input', {
+                    type: 'checkbox',
+                    value: String(p.fivemId),
+                    'data-name': p.name || ''
+                });
+                if (isSelected) cb.checked = true;
+                cb.addEventListener('change', function () {
+                    state.form.targetMode = 'player';
+                    if (this.checked) {
+                        state.form.targets.push({ fivemId: parseInt(this.value, 10), name: this.getAttribute('data-name') || '' });
+                    } else {
+                        var val = parseInt(this.value, 10);
+                        state.form.targets = state.form.targets.filter(function (t) { return t.fivemId !== val; });
+                    }
+                    if (state.form.targets.length === 0) state.form.targetMode = 'none';
+                });
+                var label = (p.name || 'Player') + ' (ID: ' + p.fivemId + (p.distance != null ? ', ' + p.distance + 'm' : '') + ')';
+                option.appendChild(cb);
+                option.appendChild(el('span', { textContent: label }));
+                list.appendChild(option);
+            });
+            targetGroup.appendChild(list);
+        }
+
+        // Manual target input
+        var manualBtn = el('button', {
+            className: 'player-none-btn' + (state.form.targetMode === 'manual' ? ' selected' : ''),
+            type: 'button',
+            textContent: 'Enter name manually',
+            style: 'margin-top: 8px;',
+            onClick: function () {
+                state.form.targetMode = 'manual';
+                state.form.targets = [];
+                renderReportWizard();
+            }
+        });
+        targetGroup.appendChild(manualBtn);
+
+        if (state.form.targetMode === 'manual') {
+            var manualInput = el('input', {
+                className: 'form-input manual-target-input',
+                type: 'text',
+                placeholder: 'Player name or ID...',
+                value: state.form.manualTarget || '',
+                style: 'margin-top: 8px;'
+            });
+            manualInput.addEventListener('input', function () {
+                state.form.manualTarget = this.value;
+            });
+            targetGroup.appendChild(manualInput);
+        }
+
+        container.appendChild(targetGroup);
+    }
+
+    // ── Step 2: Details ──
+
+    function renderStep2(container) {
+        var rfc = (state.serverConfig && state.serverConfig.reportFormConfig) || {};
+        var titleLabel = rfc.titleLabel || 'Subject';
+        var titlePlaceholder = rfc.titlePlaceholder || 'Short title for your report';
+        var descriptionLabel = rfc.descriptionLabel || 'Description';
+        var descriptionPlaceholder = rfc.descriptionPlaceholder || 'Describe what happened in detail (min 20 characters)';
+
+        // Subject
+        var subGroup = el('div', { className: 'form-group' });
+        subGroup.appendChild(el('label', { className: 'form-label', innerHTML: escapeText(titleLabel) + ' <span class="required">*</span>' }));
+        var subInput = el('input', {
+            className: 'form-input', type: 'text', id: 'inp-subject',
+            placeholder: titlePlaceholder, maxlength: '80',
+            value: state.form.subject || ''
+        });
+        subInput.addEventListener('input', function () {
+            state.form.subject = this.value;
+            var cc = document.getElementById('cc-subject');
+            if (cc) cc.textContent = this.value.length + '/80';
+        });
+        subGroup.appendChild(subInput);
+        subGroup.appendChild(el('div', { className: 'char-count', id: 'cc-subject', textContent: (state.form.subject || '').length + '/80' }));
+        subGroup.appendChild(el('div', { className: 'form-error hidden', id: 'err-subject' }));
+        container.appendChild(subGroup);
+
+        // Description
+        var descGroup = el('div', { className: 'form-group' });
+        descGroup.appendChild(el('label', { className: 'form-label', innerHTML: escapeText(descriptionLabel) + ' <span class="required">*</span>' }));
+        var descTa = el('textarea', {
+            className: 'form-textarea', id: 'inp-description',
+            placeholder: descriptionPlaceholder,
+        });
+        descTa.value = state.form.description || '';
+        descTa.addEventListener('input', function () {
+            state.form.description = this.value;
+            var cc = document.getElementById('cc-description');
+            if (cc) cc.textContent = this.value.length + '/2000';
+        });
+        descGroup.appendChild(descTa);
+        descGroup.appendChild(el('div', { className: 'char-count', id: 'cc-description', textContent: (state.form.description || '').length + '/2000' }));
+        descGroup.appendChild(el('div', { className: 'form-error hidden', id: 'err-description' }));
+        container.appendChild(descGroup);
+
+        // Severity
+        var sevGroup = el('div', { className: 'form-group' });
+        sevGroup.appendChild(el('label', { className: 'form-label', textContent: 'Severity' }));
+        var sevRow = el('div', { className: 'severity-group' });
+        ['low', 'medium', 'high', 'critical'].forEach(function (sev) {
+            sevRow.appendChild(el('button', {
+                className: 'severity-btn' + (state.form.severity === sev ? ' selected' : ''),
+                type: 'button',
+                textContent: sev.charAt(0).toUpperCase() + sev.slice(1),
+                'data-severity': sev,
+                onClick: function () {
+                    state.form.severity = sev;
+                    sevRow.querySelectorAll('.severity-btn').forEach(function (b) { b.classList.remove('selected'); });
+                    this.classList.add('selected');
+                }
+            }));
+        });
+        sevGroup.appendChild(sevRow);
+        container.appendChild(sevGroup);
+
+        // Dynamic custom fields from category config
         var selectedCat = getSelectedCategoryData();
         var fields = selectedCat ? sortFields(selectedCat.fields) : [];
-
-        container.innerHTML = '';
-
-        // Category (custom dropdown for dark theme)
-        var sectionCat = document.createElement('div');
-        sectionCat.className = 'modora-form-section';
-        var labelCat = document.createElement('label');
-        labelCat.className = 'modora-label';
-        labelCat.setAttribute('for', 'category');
-        labelCat.textContent = 'Category';
-        var categoryOptions = [{ value: '', label: 'Select category...' }].concat(
-            categories.map(function(c) { return { value: c.id, label: c.label }; })
-        );
-        var categoryDropdown = createCustomDropdown(
-            categoryOptions,
-            state.form.category,
-            'Select category...',
-            function(value) {
-                state.form.category = value;
-                state.form.customFields = {};
-                renderFormContent();
-                renderNearbyPlayers();
-            },
-            'category'
-        );
-        var errCat = document.createElement('div');
-        errCat.id = 'categoryError';
-        errCat.className = 'modora-error hidden';
-        sectionCat.appendChild(labelCat);
-        sectionCat.appendChild(categoryDropdown);
-        sectionCat.appendChild(errCat);
-        container.appendChild(sectionCat);
-
-        // Dynamic fields from reportFormConfig
         if (fields.length) {
-            var wrapFields = document.createElement('div');
-            wrapFields.className = 'modora-dynamic-fields';
-            fields.forEach(function(field) {
-                var section = document.createElement('div');
-                section.className = 'modora-form-section';
-                section.setAttribute('data-field-id', field.id);
-
-                var label = document.createElement('label');
-                label.className = 'modora-label';
-                label.textContent = field.label || field.id;
-                if (field.required) label.textContent += ' *';
-                section.appendChild(label);
+            var dynWrap = el('div', { className: 'dynamic-fields' });
+            fields.forEach(function (field) {
+                var fg = el('div', { className: 'form-group' });
+                var labelHtml = escapeText(field.label || field.id);
+                if (field.required) labelHtml += ' <span class="required">*</span>';
+                fg.appendChild(el('label', { className: 'form-label', innerHTML: labelHtml }));
 
                 var type = (field.type || 'text').toLowerCase();
                 var value = state.form.customFields[field.id];
 
                 if (type === 'text') {
-                    var input = document.createElement('input');
-                    input.type = 'text';
-                    input.className = 'modora-input';
-                    input.placeholder = field.placeholder || field.label || '';
-                    input.value = value != null ? value : '';
-                    input.setAttribute('data-field-id', field.id);
-                    input.addEventListener('input', function() {
-                        state.form.customFields[field.id] = this.value;
+                    var inp = el('input', {
+                        className: 'form-input', type: 'text',
+                        placeholder: field.placeholder || field.label || '',
+                        value: value != null ? value : '',
+                        'data-field-id': field.id
                     });
-                    section.appendChild(input);
+                    inp.addEventListener('input', function () { state.form.customFields[field.id] = this.value; });
+                    fg.appendChild(inp);
                 } else if (type === 'textarea') {
-                    var ta = document.createElement('textarea');
-                    ta.className = 'modora-textarea';
-                    ta.placeholder = field.placeholder || field.label || '';
+                    var ta = el('textarea', {
+                        className: 'form-textarea',
+                        placeholder: field.placeholder || field.label || '',
+                        'data-field-id': field.id
+                    });
                     ta.value = value != null ? value : '';
-                    ta.setAttribute('data-field-id', field.id);
-                    ta.addEventListener('input', function() {
-                        state.form.customFields[field.id] = this.value;
-                    });
-                    section.appendChild(ta);
+                    ta.addEventListener('input', function () { state.form.customFields[field.id] = this.value; });
+                    fg.appendChild(ta);
                 } else if (type === 'select') {
-                    var opts = (field.options || []).map(function(o) { return { value: o, label: o }; });
-                    var selDropdown = createCustomDropdown(
-                        opts,
-                        value,
-                        'Select...',
-                        function(val) { state.form.customFields[field.id] = val; },
-                        null
-                    );
-                    selDropdown.querySelector('.modora-dropdown-trigger').setAttribute('data-field-id', field.id);
-                    section.appendChild(selDropdown);
+                    var opts = (field.options || []).map(function (o) { return { value: o, label: o }; });
+                    fg.appendChild(buildDropdown(opts, value || '', 'Select...', function (val) {
+                        state.form.customFields[field.id] = val;
+                    }));
                 } else if (type === 'number') {
-                    var num = document.createElement('input');
-                    num.type = 'number';
-                    num.className = 'modora-input';
-                    num.placeholder = field.placeholder || field.label || '';
-                    num.value = value != null ? value : '';
-                    num.setAttribute('data-field-id', field.id);
-                    num.addEventListener('input', function() {
-                        state.form.customFields[field.id] = this.value;
+                    var num = el('input', {
+                        className: 'form-input', type: 'number',
+                        placeholder: field.placeholder || field.label || '',
+                        value: value != null ? value : '',
+                        'data-field-id': field.id
                     });
-                    section.appendChild(num);
-                } else if (type === 'screenshot') {
-                    var screenshotWrap = document.createElement('div');
-                    var screenshotBtn = document.createElement('button');
-                    screenshotBtn.type = 'button';
-                    screenshotBtn.className = 'modora-btn modora-btn-primary';
-                    screenshotBtn.textContent = '📷 Take screenshot';
-                    screenshotBtn.setAttribute('data-field-id', field.id);
-                    var screenshotValue = state.form.customFields[field.id] || state.form.screenshotUrl;
-                    if (screenshotValue) {
-                        var preview = document.createElement('div');
-                        preview.className = 'modora-screenshot-preview';
-                        preview.textContent = 'Screenshot added';
-                        screenshotWrap.appendChild(preview);
-                    }
-                    screenshotWrap.appendChild(screenshotBtn);
-                    screenshotBtn.addEventListener('click', function() {
-                        var btn = this;
-                        btn.disabled = true;
-                        btn.textContent = 'Taking screenshot...';
-                        sendNuiCallback('requestScreenshotUpload', {}).then(function(data) {
-                            btn.disabled = false;
-                            btn.textContent = '📷 Take screenshot';
-                            if (data && data.success && data.url) {
-                                state.form.customFields[field.id] = data.url;
-                                state.form.screenshotUrl = data.url;
-                                if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
-                                renderFormContent();
-                                renderEvidenceUrls();
-                            } else if (data && data.error) {
-                                showFormError(data.error);
-                            }
-                        }).catch(function() {
-                            btn.disabled = false;
-                            btn.textContent = '📷 Take screenshot';
-                        });
-                    });
-                    section.appendChild(screenshotWrap);
-                } else if (type === 'file-upload') {
-                    var fileNote = document.createElement('p');
-                    fileNote.className = 'modora-card-subtitle';
-                    fileNote.style.marginTop = '4px';
-                    fileNote.textContent = 'You can add evidence URLs below.';
-                    section.appendChild(fileNote);
+                    num.addEventListener('input', function () { state.form.customFields[field.id] = this.value; });
+                    fg.appendChild(num);
                 }
 
-                var errField = document.createElement('div');
-                errField.className = 'modora-error hidden';
-                errField.setAttribute('data-field-error', field.id);
-                section.appendChild(errField);
-                wrapFields.appendChild(section);
+                fg.appendChild(el('div', { className: 'form-error hidden', 'data-field-error': field.id }));
+                dynWrap.appendChild(fg);
             });
-            container.appendChild(wrapFields);
+            container.appendChild(dynWrap);
+        }
+    }
+
+    // ── Step 3: Evidence ──
+
+    function renderStep3(container) {
+        var rfc = (state.serverConfig && state.serverConfig.reportFormConfig) || {};
+        var screenshotLabel = rfc.screenshotLabel || 'Screenshot';
+        var screenshotButtonLabel = rfc.screenshotButtonLabel || 'Take screenshot';
+
+        // Screenshot
+        var scGroup = el('div', { className: 'form-group' });
+        scGroup.appendChild(el('label', { className: 'form-label', textContent: screenshotLabel }));
+
+        if (state.form.screenshotUrl) {
+            scGroup.appendChild(el('div', { className: 'screenshot-status', textContent: 'Screenshot captured' }));
         }
 
-        var rfcLabels = (rfc && typeof rfc === 'object') ? rfc : {};
-        var titleLabel = rfcLabels.titleLabel || 'Title';
-        var titlePlaceholder = rfcLabels.titlePlaceholder || 'Short title';
-        var descriptionLabel = rfcLabels.descriptionLabel || 'Description';
-        var descriptionPlaceholder = rfcLabels.descriptionPlaceholder || 'Describe what happened (min 20 characters)';
-        var evidenceLabel = rfcLabels.evidenceLabel || 'Evidence (URLs)';
-        var addUrlLabel = rfcLabels.addUrlLabel || '+ Add URL';
-        var screenshotLabel = rfcLabels.screenshotLabel || 'Screenshot';
-        var screenshotButtonLabel = rfcLabels.screenshotButtonLabel || 'Take screenshot';
-
-        // Subject (title)
-        var sectionSub = document.createElement('div');
-        sectionSub.className = 'modora-form-section';
-        var labelSub = document.createElement('label');
-        labelSub.className = 'modora-label';
-        labelSub.setAttribute('for', 'subject');
-        labelSub.textContent = titleLabel;
-        var inputSub = document.createElement('input');
-        inputSub.type = 'text';
-        inputSub.id = 'subject';
-        inputSub.className = 'modora-input';
-        inputSub.placeholder = titlePlaceholder;
-        inputSub.maxLength = 80;
-        inputSub.value = state.form.subject || '';
-        inputSub.addEventListener('input', function() {
-            state.form.subject = this.value;
-            var count = document.getElementById('subjectCount');
-            if (count) count.textContent = this.value.length;
-        });
-        var subCount = document.createElement('div');
-        subCount.id = 'subjectCount';
-        subCount.className = 'modora-char-count';
-        subCount.textContent = (state.form.subject || '').length;
-        var errSub = document.createElement('div');
-        errSub.id = 'subjectError';
-        errSub.className = 'modora-error hidden';
-        sectionSub.appendChild(labelSub);
-        sectionSub.appendChild(inputSub);
-        sectionSub.appendChild(subCount);
-        sectionSub.appendChild(errSub);
-        container.appendChild(sectionSub);
-
-        // Description
-        var sectionDesc = document.createElement('div');
-        sectionDesc.className = 'modora-form-section';
-        var labelDesc = document.createElement('label');
-        labelDesc.className = 'modora-label';
-        labelDesc.setAttribute('for', 'description');
-        labelDesc.textContent = descriptionLabel;
-        var taDesc = document.createElement('textarea');
-        taDesc.id = 'description';
-        taDesc.className = 'modora-textarea';
-        taDesc.placeholder = descriptionPlaceholder;
-        taDesc.value = state.form.description || '';
-        taDesc.addEventListener('input', function() {
-            state.form.description = this.value;
-            var count = document.getElementById('descriptionCount');
-            if (count) count.textContent = this.value.length;
-        });
-        var descCount = document.createElement('div');
-        descCount.id = 'descriptionCount';
-        descCount.className = 'modora-char-count';
-        descCount.textContent = (state.form.description || '').length;
-        var errDesc = document.createElement('div');
-        errDesc.id = 'descriptionError';
-        errDesc.className = 'modora-error hidden';
-        sectionDesc.appendChild(labelDesc);
-        sectionDesc.appendChild(taDesc);
-        sectionDesc.appendChild(descCount);
-        sectionDesc.appendChild(errDesc);
-        container.appendChild(sectionDesc);
-
-        // Evidence URLs
-        var sectionEv = document.createElement('div');
-        sectionEv.className = 'modora-form-section';
-        var labelEv = document.createElement('label');
-        labelEv.className = 'modora-label';
-        labelEv.textContent = evidenceLabel;
-        sectionEv.appendChild(labelEv);
-        var evidenceList = document.createElement('div');
-        evidenceList.id = 'evidenceList';
-        evidenceList.className = 'modora-evidence-list';
-        sectionEv.appendChild(evidenceList);
-        var btnAddEv = document.createElement('button');
-        btnAddEv.type = 'button';
-        btnAddEv.id = 'btnAddEvidence';
-        btnAddEv.className = 'modora-btn modora-btn-ghost';
-        btnAddEv.textContent = addUrlLabel;
-        btnAddEv.addEventListener('click', addEvidenceUrl);
-        sectionEv.appendChild(btnAddEv);
-        container.appendChild(sectionEv);
-
-        // Screenshot (if not already in dynamic fields)
-        var hasScreenshotField = fields.some(function(f) { return (f.type || '').toLowerCase() === 'screenshot'; });
-        if (!hasScreenshotField && rfc !== false) {
-            var sectionSc = document.createElement('div');
-            sectionSc.className = 'modora-form-section';
-            var labelSc = document.createElement('label');
-            labelSc.className = 'modora-label';
-            labelSc.textContent = screenshotLabel;
-            sectionSc.appendChild(labelSc);
-            var screenshotBtn = document.createElement('button');
-            screenshotBtn.type = 'button';
-            screenshotBtn.id = 'btnTakeScreenshot';
-            screenshotBtn.className = 'modora-btn modora-btn-primary';
-            screenshotBtn.textContent = state.form.screenshotUrl ? (screenshotLabel + ' added') : screenshotButtonLabel;
-            if (state.form.screenshotUrl) screenshotBtn.disabled = true;
-            screenshotBtn.addEventListener('click', function() {
+        var scBtn = el('button', {
+            className: 'btn btn-secondary', type: 'button',
+            textContent: state.form.screenshotUrl ? 'Retake screenshot' : screenshotButtonLabel,
+            onClick: function () {
                 var btn = this;
                 btn.disabled = true;
                 btn.textContent = 'Taking screenshot...';
-                sendNuiCallback('requestScreenshotUpload', {}).then(function(data) {
+                sendNuiCallback('requestScreenshotUpload', {}).then(function (data) {
                     btn.disabled = false;
                     btn.textContent = screenshotButtonLabel;
                     if (data && data.success && data.url) {
                         state.form.screenshotUrl = data.url;
                         if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
-                        renderFormContent();
-                        renderEvidenceUrls();
+                        renderReportWizard();
                     } else if (data && data.error) {
-                        showFormError(data.error);
+                        showReportToast(data.error);
                     }
-                }).catch(function() {
+                }).catch(function () {
                     btn.disabled = false;
                     btn.textContent = screenshotButtonLabel;
                 });
+            }
+        });
+        scGroup.appendChild(scBtn);
+        container.appendChild(scGroup);
+
+        // Evidence URLs
+        var evGroup = el('div', { className: 'form-group' });
+        evGroup.appendChild(el('label', { className: 'form-label', textContent: rfc.evidenceLabel || 'Evidence URLs' }));
+
+        state.form.evidenceUrls.forEach(function (url, i) {
+            var item = el('div', { className: 'evidence-item' });
+            var inp = el('input', {
+                className: 'form-input', type: 'url', placeholder: 'https://...',
+                value: url, 'data-index': String(i)
             });
-            sectionSc.appendChild(screenshotBtn);
-            container.appendChild(sectionSc);
-        }
-
-        // Nearby players
-        var sectionNearby = document.createElement('div');
-        sectionNearby.id = 'nearbySection';
-        sectionNearby.className = 'modora-form-section';
-        var labelNearby = document.createElement('label');
-        labelNearby.className = 'modora-label';
-        labelNearby.textContent = 'Nearby players (optional)';
-        sectionNearby.appendChild(labelNearby);
-        var nearbyDiv = document.createElement('div');
-        nearbyDiv.id = 'nearbyPlayers';
-        nearbyDiv.className = 'modora-nearby';
-        sectionNearby.appendChild(nearbyDiv);
-        container.appendChild(sectionNearby);
-
-        renderEvidenceUrls();
-        renderNearbyPlayers();
-    }
-
-    function showFormError(msg) {
-        var formError = document.getElementById('formError');
-        if (formError) {
-            formError.textContent = msg;
-            formError.classList.remove('hidden');
-        }
-    }
-
-    function renderEvidenceUrls() {
-        var list = document.getElementById('evidenceList');
-        if (!list) return;
-        list.innerHTML = '';
-        state.form.evidenceUrls.forEach(function(url, i) {
-            var item = document.createElement('div');
-            item.className = 'modora-evidence-item';
-            var input = document.createElement('input');
-            input.type = 'url';
-            input.placeholder = 'https://...';
-            input.className = 'modora-input';
-            input.value = url;
-            input.setAttribute('data-index', i);
-            input.addEventListener('input', function() {
+            inp.addEventListener('input', function () {
                 state.form.evidenceUrls[parseInt(this.getAttribute('data-index'), 10)] = this.value;
             });
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'modora-btn modora-btn-ghost';
-            btn.textContent = 'Remove';
-            btn.addEventListener('click', function() {
-                state.form.evidenceUrls.splice(i, 1);
-                renderFormContent();
-            });
-            item.appendChild(input);
-            item.appendChild(btn);
-            list.appendChild(item);
+            item.appendChild(inp);
+            item.appendChild(el('button', {
+                className: 'btn btn-secondary btn-sm btn-remove', type: 'button', textContent: 'Remove',
+                onClick: (function (idx) {
+                    return function () {
+                        state.form.evidenceUrls.splice(idx, 1);
+                        renderReportWizard();
+                    };
+                })(i)
+            }));
+            evGroup.appendChild(item);
         });
-    }
 
-    function addEvidenceUrl() {
-        state.form.evidenceUrls.push('');
-        renderEvidenceUrls();
-    }
+        evGroup.appendChild(el('button', {
+            className: 'btn btn-secondary btn-sm', type: 'button',
+            textContent: rfc.addUrlLabel || '+ Add URL',
+            onClick: function () {
+                state.form.evidenceUrls.push('');
+                renderReportWizard();
+            }
+        }));
+        container.appendChild(evGroup);
 
-    function renderNearbyPlayers() {
-        var container = document.getElementById('nearbyPlayers');
-        if (!container) return;
-        var section = document.getElementById('nearbySection');
-        var players = (state.playerData && state.playerData.nearbyPlayers) || [];
-        if (players.length === 0) {
-            if (section) section.classList.add('hidden');
-            return;
-        }
-        if (section) section.classList.remove('hidden');
-        container.innerHTML = '';
-        state.form.targets = [];
-        players.forEach(function(p) {
-            var label = document.createElement('label');
-            label.className = 'modora-player-option';
-            var cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.value = p.fivemId;
-            cb.setAttribute('data-name', p.name || '');
-            cb.addEventListener('change', function() {
-                if (this.checked) {
-                    state.form.targets.push({ fivemId: parseInt(this.value, 10), name: this.getAttribute('data-name') || '' });
-                } else {
-                    state.form.targets = state.form.targets.filter(function(t) { return t.fivemId !== parseInt(this.value, 10); });
-                }
-            });
-            var span = document.createElement('span');
-            span.textContent = (p.name || 'Player') + ' (ID: ' + p.fivemId + (p.distance != null ? ', ' + p.distance + 'm' : '') + ')';
-            label.appendChild(cb);
-            label.appendChild(span);
-            container.appendChild(label);
-        });
-    }
-
-    function validateForm() {
-        var categoryEl = document.getElementById('category');
-        var subjectEl = document.getElementById('subject');
-        var descriptionEl = document.getElementById('description');
-
-        var category = categoryEl ? categoryEl.value : '';
-        var subject = (subjectEl && subjectEl.value) ? subjectEl.value.trim() : '';
-        var description = (descriptionEl && descriptionEl.value) ? descriptionEl.value.trim() : '';
-
-        var errors = {};
-        if (!category) errors.category = 'Select a category';
-        if (!subject || subject.length < 1) errors.subject = 'Title is required';
-        else if (subject.length > 80) errors.subject = 'Title must be 80 characters or less';
-        if (!description || description.length < 20) errors.description = 'Description must be at least 20 characters';
-        else if (description.length > 2000) errors.description = 'Description must be 2000 characters or less';
-
+        // Dynamic fields of type 'screenshot' or 'file-upload' from category
         var selectedCat = getSelectedCategoryData();
-        if (selectedCat && selectedCat.fields) {
-            selectedCat.fields.forEach(function(field) {
-                if (field.required) {
-                    var val = state.form.customFields[field.id];
-                    if (val === undefined || val === null || String(val).trim() === '') {
-                        errors['field_' + field.id] = (field.label || field.id) + ' is required';
-                    }
+        var fields = selectedCat ? sortFields(selectedCat.fields) : [];
+        fields.forEach(function (field) {
+            var type = (field.type || '').toLowerCase();
+            if (type === 'screenshot') {
+                var fg = el('div', { className: 'form-group' });
+                fg.appendChild(el('label', { className: 'form-label', textContent: field.label || 'Screenshot' }));
+                var scVal = state.form.customFields[field.id] || state.form.screenshotUrl;
+                if (scVal) {
+                    fg.appendChild(el('div', { className: 'screenshot-status', textContent: 'Screenshot added' }));
                 }
-            });
-        }
-
-        ['category', 'subject', 'description'].forEach(function(field) {
-            var errEl = document.getElementById(field + 'Error');
-            if (errEl) {
-                errEl.textContent = errors[field] || '';
-                errEl.classList.toggle('hidden', !errors[field]);
+                var btn = el('button', {
+                    className: 'btn btn-secondary', type: 'button',
+                    textContent: scVal ? 'Retake' : 'Take screenshot',
+                    onClick: function () {
+                        var b = this;
+                        b.disabled = true;
+                        b.textContent = 'Taking screenshot...';
+                        sendNuiCallback('requestScreenshotUpload', {}).then(function (data) {
+                            b.disabled = false;
+                            b.textContent = 'Take screenshot';
+                            if (data && data.success && data.url) {
+                                state.form.customFields[field.id] = data.url;
+                                state.form.screenshotUrl = data.url;
+                                if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
+                                renderReportWizard();
+                            }
+                        }).catch(function () {
+                            b.disabled = false;
+                            b.textContent = 'Take screenshot';
+                        });
+                    }
+                });
+                fg.appendChild(btn);
+                container.appendChild(fg);
+            } else if (type === 'file-upload') {
+                var fg2 = el('div', { className: 'form-group' });
+                fg2.appendChild(el('label', { className: 'form-label', textContent: field.label || 'File' }));
+                fg2.appendChild(el('p', { className: 'form-hint', textContent: 'You can add evidence URLs above.' }));
+                container.appendChild(fg2);
             }
         });
-        var container = document.getElementById('formContent');
-        if (container) {
-            var fieldErrors = container.querySelectorAll('[data-field-error]');
-            for (var i = 0; i < fieldErrors.length; i++) {
-                var fid = fieldErrors[i].getAttribute('data-field-error');
-                fieldErrors[i].textContent = errors['field_' + fid] || '';
-                fieldErrors[i].classList.toggle('hidden', !errors['field_' + fid]);
+    }
+
+    // ── Step 4: Review & Submit ──
+
+    function renderStep4(container) {
+        var categories = getCategories();
+        var catLabel = '';
+        categories.forEach(function (c) { if (c.id === state.form.category) catLabel = c.label; });
+
+        // Category & Target section
+        var sec1 = el('div', { className: 'review-section' });
+        sec1.appendChild(buildReviewHeader('Category & Target', 1));
+        sec1.appendChild(buildReviewField('Category', catLabel || state.form.category));
+        if (state.form.targetMode === 'player' && state.form.targets.length) {
+            var names = state.form.targets.map(function (t) { return t.name || ('ID:' + t.fivemId); }).join(', ');
+            sec1.appendChild(buildReviewField('Target', names));
+        } else if (state.form.targetMode === 'manual' && state.form.manualTarget) {
+            sec1.appendChild(buildReviewField('Target', state.form.manualTarget));
+        } else {
+            sec1.appendChild(buildReviewField('Target', 'No specific player'));
+        }
+        container.appendChild(sec1);
+
+        // Details section
+        var sec2 = el('div', { className: 'review-section' });
+        sec2.appendChild(buildReviewHeader('Details', 2));
+        sec2.appendChild(buildReviewField('Subject', state.form.subject));
+        var descPreview = state.form.description;
+        if (descPreview.length > 150) descPreview = descPreview.substring(0, 150) + '...';
+        sec2.appendChild(buildReviewField('Description', descPreview));
+        sec2.appendChild(buildReviewField('Severity', state.form.severity.charAt(0).toUpperCase() + state.form.severity.slice(1)));
+
+        // Custom fields
+        var selectedCat = getSelectedCategoryData();
+        var fields = selectedCat ? sortFields(selectedCat.fields) : [];
+        fields.forEach(function (f) {
+            var type = (f.type || '').toLowerCase();
+            if (type === 'screenshot' || type === 'file-upload') return;
+            var val = state.form.customFields[f.id];
+            if (val) sec2.appendChild(buildReviewField(f.label || f.id, String(val)));
+        });
+        container.appendChild(sec2);
+
+        // Evidence section
+        var allUrls = gatherAttachments();
+        var sec3 = el('div', { className: 'review-section' });
+        sec3.appendChild(buildReviewHeader('Evidence', 3));
+        if (state.form.screenshotUrl) {
+            sec3.appendChild(buildReviewField('Screenshot', 'Captured'));
+        }
+        sec3.appendChild(buildReviewField('Evidence URLs', allUrls.length > 0 ? allUrls.length + ' link(s)' : 'None'));
+        container.appendChild(sec3);
+
+        // Next info
+        container.appendChild(el('div', {
+            className: 'review-next-info',
+            textContent: 'After submitting, staff will be notified and your report will be reviewed. You can check the status of your report using /reportstatus in-game.'
+        }));
+    }
+
+    function buildReviewHeader(title, stepNum) {
+        var header = el('div', { className: 'review-section-header' });
+        header.appendChild(el('span', { className: 'review-section-title', textContent: title }));
+        header.appendChild(el('button', {
+            className: 'review-edit-btn', type: 'button', textContent: 'Edit',
+            onClick: function () { state.reportStep = stepNum; renderReportWizard(); }
+        }));
+        return header;
+    }
+
+    function buildReviewField(label, value) {
+        return el('div', { className: 'review-field' }, [
+            el('div', { className: 'review-field-label', textContent: label }),
+            el('div', { className: 'review-field-value', textContent: escapeText(value || '--') })
+        ]);
+    }
+
+    function showReportToast(msg) {
+        var body = appRoot.querySelector('.modal-body');
+        if (!body) return;
+        var existing = body.querySelector('.toast');
+        if (existing) existing.remove();
+        var toast = el('div', { className: 'toast toast-error', textContent: msg });
+        body.insertBefore(toast, body.firstChild);
+    }
+
+    // ── Validation ──
+
+    function validateStep(step) {
+        clearValidationErrors();
+        var errors = {};
+
+        if (step === 1) {
+            if (!state.form.category) errors.category = 'Select a category';
+        }
+
+        if (step === 2) {
+            var sub = (state.form.subject || '').trim();
+            if (!sub) errors.subject = 'Subject is required';
+            else if (sub.length > 80) errors.subject = 'Subject must be 80 characters or less';
+
+            var desc = (state.form.description || '').trim();
+            if (!desc || desc.length < 20) errors.description = 'Description must be at least 20 characters';
+            else if (desc.length > 2000) errors.description = 'Description must be 2000 characters or less';
+
+            // Validate required custom fields
+            var selectedCat = getSelectedCategoryData();
+            if (selectedCat && selectedCat.fields) {
+                selectedCat.fields.forEach(function (field) {
+                    var type = (field.type || '').toLowerCase();
+                    if (type === 'screenshot' || type === 'file-upload') return;
+                    if (field.required) {
+                        var val = state.form.customFields[field.id];
+                        if (val === undefined || val === null || String(val).trim() === '') {
+                            errors['field_' + field.id] = (field.label || field.id) + ' is required';
+                        }
+                    }
+                });
             }
         }
 
-        var formError = document.getElementById('formError');
-        if (formError) {
-            formError.textContent = Object.keys(errors).length ? (errors.category || errors.subject || errors.description || (selectedCat && selectedCat.fields && selectedCat.fields.find(function(f) { return errors['field_' + f.id]; }) && selectedCat.fields.map(function(f) { return errors['field_' + f.id]; }).filter(Boolean)[0]) || 'Please fix the errors above') : '';
-            formError.classList.toggle('hidden', !formError.textContent);
+        // Show errors
+        var keys = Object.keys(errors);
+        if (keys.length === 0) return true;
+
+        keys.forEach(function (key) {
+            if (key.indexOf('field_') === 0) {
+                var fid = key.substring(6);
+                var errEl = appRoot.querySelector('[data-field-error="' + fid + '"]');
+                if (errEl) { errEl.textContent = errors[key]; errEl.classList.remove('hidden'); }
+            } else {
+                var errEl2 = document.getElementById('err-' + key);
+                if (errEl2) { errEl2.textContent = errors[key]; errEl2.classList.remove('hidden'); }
+            }
+        });
+
+        // Show first error as toast
+        showReportToast(errors[keys[0]]);
+        return false;
+    }
+
+    function clearValidationErrors() {
+        var errs = appRoot.querySelectorAll('.form-error');
+        for (var i = 0; i < errs.length; i++) {
+            errs[i].textContent = '';
+            errs[i].classList.add('hidden');
         }
-        return Object.keys(errors).length === 0;
+        var toast = appRoot.querySelector('.toast');
+        if (toast) toast.remove();
+    }
+
+    // ── Submit ──
+
+    function gatherAttachments() {
+        var allUrls = state.form.evidenceUrls.filter(Boolean).slice();
+        if (state.form.screenshotUrl && allUrls.indexOf(state.form.screenshotUrl) === -1) {
+            allUrls.push(state.form.screenshotUrl);
+        }
+        // Deduplicate
+        var unique = [];
+        for (var i = 0; i < allUrls.length; i++) {
+            if (unique.indexOf(allUrls[i]) === -1) unique.push(allUrls[i]);
+        }
+        return unique;
     }
 
     function submitReport() {
-        if (!state.playerData) return;
-        if (!validateForm()) return;
+        if (!state.playerData) {
+            showReportToast('Player data not loaded. Try reopening the report form.');
+            return;
+        }
 
-        var categoryEl = document.getElementById('category');
-        var subjectEl = document.getElementById('subject');
-        var descriptionEl = document.getElementById('description');
+        var attachments = gatherAttachments();
 
-        var subject = subjectEl ? subjectEl.value.trim() : '';
-        var description = descriptionEl ? descriptionEl.value.trim() : '';
+        // Build targets
+        var targets = [];
+        if (state.form.targetMode === 'player') {
+            targets = state.form.targets;
+        } else if (state.form.targetMode === 'manual' && state.form.manualTarget.trim()) {
+            targets = [{ name: state.form.manualTarget.trim(), fivemId: 0 }];
+        }
+
+        // Resolve subject/description from custom fields if applicable
+        var subject = state.form.subject.trim();
+        var description = state.form.description.trim();
         var selectedCat = getSelectedCategoryData();
         if (selectedCat && selectedCat.fields) {
-            var subjectField = selectedCat.fields.find(function(f) { return (f.type || '').toLowerCase() === 'text' && (f.label || '').toLowerCase().indexOf('subject') !== -1; });
-            var descField = selectedCat.fields.find(function(f) { return (f.type || '').toLowerCase() === 'textarea' && (f.label || '').toLowerCase().indexOf('description') !== -1; });
+            var subjectField = selectedCat.fields.find(function (f) { return (f.type || '').toLowerCase() === 'text' && (f.label || '').toLowerCase().indexOf('subject') !== -1; });
+            var descField = selectedCat.fields.find(function (f) { return (f.type || '').toLowerCase() === 'textarea' && (f.label || '').toLowerCase().indexOf('description') !== -1; });
             if (subjectField && state.form.customFields[subjectField.id]) subject = String(state.form.customFields[subjectField.id]);
             if (descField && state.form.customFields[descField.id]) description = String(state.form.customFields[descField.id]);
         }
         if (!subject) subject = 'Report';
-        if (!description) description = '';
 
-        var allUrls = state.form.evidenceUrls.filter(Boolean).slice();
-        if (state.form.screenshotUrl && allUrls.indexOf(state.form.screenshotUrl) === -1) allUrls.push(state.form.screenshotUrl);
-        var attachments = [];
-        for (var u = 0; u < allUrls.length; u++) {
-            if (attachments.indexOf(allUrls[u]) === -1) attachments.push(allUrls[u]);
-        }
+        var priorityMap = { low: 'low', medium: 'normal', high: 'high', critical: 'urgent' };
 
         var reportData = {
-            category: categoryEl ? categoryEl.value : '',
+            category: state.form.category,
             subject: subject,
             description: description,
-            priority: 'normal',
+            priority: priorityMap[state.form.severity] || 'normal',
             reporter: {
                 fivemId: state.playerData.fivemId,
                 name: state.playerData.name,
                 identifiers: state.playerData.identifiers || {},
                 position: state.playerData.position || null
             },
-            targets: state.form.targets,
+            targets: targets,
             attachments: attachments,
             customFields: state.form.customFields || {},
-            evidenceUrls: attachments
+            evidenceUrls: attachments,
+            meta: {
+                severity: state.form.severity
+            }
         };
 
-        showView('submitting');
+        // Disable submit button
+        var submitBtn = appRoot.querySelector('.modal-footer .btn-primary');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting...'; }
 
-        sendNuiCallback('submitReport', reportData).then(function(data) {
+        sendNuiCallback('submitReport', reportData).then(function (data) {
             if (data && data.success) {
                 // Wait for reportSubmitted event from Lua for final result
             } else {
-                showView('form');
-                showFormError((data && data.error) || 'Submit failed');
-                var btn = document.getElementById('btnSubmit');
-                if (btn) btn.disabled = false;
+                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit report'; }
+                showReportToast((data && data.error) || 'Submit failed. Try again.');
             }
-        }).catch(function(err) {
-            showView('form');
-            showFormError('Failed to send report. Try again.');
-            var btn = document.getElementById('btnSubmit');
-            if (btn) btn.disabled = false;
+        }).catch(function () {
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit report'; }
+            showReportToast('Failed to send report. Try again.');
         });
     }
 
     function handleReportSubmitted(payload) {
         var success = payload && payload.success;
         var ticketNumber = payload && payload.ticketNumber;
-        var ticketId = payload && payload.ticketId;
         var ticketUrl = payload && payload.ticketUrl;
         var error = payload && payload.error;
         var cooldownSeconds = payload && payload.cooldownSeconds;
 
-        var btn = document.getElementById('btnSubmit');
-        if (btn) btn.disabled = false;
-
         if (success) {
-            state.lastSuccess = { ticketId: ticketId, ticketNumber: ticketNumber, ticketUrl: ticketUrl };
-            var msg = document.getElementById('successMessage');
-            if (msg) {
-                msg.textContent = ticketNumber != null
-                    ? 'Your report was submitted. Ticket #' + escapeText(String(ticketNumber))
-                    : 'Your report was submitted successfully.';
-            }
-            showView('success');
+            state.lastSuccess = { ticketNumber: ticketNumber, ticketUrl: ticketUrl };
+            renderReportSuccess(ticketNumber, ticketUrl);
         } else {
-            showView('form');
-            showFormError(escapeText(error || 'Report could not be sent.'));
+            renderReportError(escapeText(error || 'Report could not be sent.'));
             if (cooldownSeconds != null && cooldownSeconds > 0) {
                 state.cooldownRemaining = cooldownSeconds;
-                var notice = document.getElementById('cooldownNotice');
-                if (notice) {
-                    notice.textContent = 'You can report again in ' + cooldownSeconds + ' seconds.';
-                    notice.classList.remove('hidden');
-                }
+                showReportToast('You can report again in ' + cooldownSeconds + ' seconds.');
             }
         }
     }
 
-    function openReport() {
-        showView('loading');
-        state.form = {
-            category: '',
-            subject: '',
-            description: '',
-            evidenceUrls: [],
-            targets: [],
-            customFields: {},
-            screenshotUrl: null
-        };
-        state.lastSuccess = null;
+    // ════════════════════════════════════════
+    // ██ REPORT STATUS VIEW
+    // ════════════════════════════════════════
 
-        var serverNameEl = document.getElementById('serverName');
-        if (serverNameEl && state.init && state.init.serverName) {
-            serverNameEl.textContent = escapeText(state.init.serverName);
-        } else if (serverNameEl) {
-            serverNameEl.textContent = '';
-        }
+    function openStatusView() {
+        state.activeView = 'status';
+        state.reports = [];
+        state.expandedReportId = null;
+        renderStatusView();
 
-        Promise.all([requestPlayerData(), requestServerConfig()]).then(function() {
-            renderIntroText();
-            renderFormContent();
-            var formError = document.getElementById('formError');
-            var cooldownNotice = document.getElementById('cooldownNotice');
-            if (formError) { formError.classList.add('hidden'); formError.textContent = ''; }
-            if (cooldownNotice) cooldownNotice.classList.add('hidden');
-            showView('form');
-        }).catch(function() {
-            showFormError('Could not load form. Try again.');
-            renderFormContent();
-            showView('form');
-        });
+        // Request statuses from Lua
+        sendNuiCallback('refreshStatuses', {}).catch(function () { });
     }
 
-    function renderIntroText() {
-        var rfc = state.serverConfig && state.serverConfig.reportFormConfig;
-        var intro = (rfc && rfc.introText) ? String(rfc.introText).trim() : '';
-        var el = document.getElementById('reportIntroText');
-        if (!el) return;
-        if (intro) {
-            el.textContent = intro;
-            el.classList.remove('hidden');
+    function closeStatusView() {
+        closeAll();
+        sendNuiCallback('closeStatus', {}).catch(function () { });
+    }
+
+    function updateStatuses(reports) {
+        state.reports = reports || [];
+        if (state.activeView === 'status') {
+            renderStatusView();
+        }
+    }
+
+    function renderStatusView() {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeStatusView));
+
+        var modal = el('div', { className: 'modal modal-status' });
+        modal.appendChild(buildModalHeader('My Reports', 'View the status of your reports', closeStatusView));
+
+        var body = el('div', { className: 'modal-body' });
+
+        if (state.reports.length === 0) {
+            body.appendChild(el('div', { className: 'empty-state' }, [
+                el('div', { className: 'empty-state-icon', textContent: '\uD83D\uDCCB' }),
+                el('div', { className: 'empty-state-title', textContent: 'No reports found' }),
+                el('div', { className: 'empty-state-text', textContent: 'You have not submitted any reports yet, or they are no longer available.' })
+            ]));
         } else {
-            el.classList.add('hidden');
-        }
-    }
-
-    function closeReport() {
-        showView('closed');
-        sendNuiCallback('closeReport', {}).catch(function() {});
-    }
-
-    function bindUi() {
-        var app = document.getElementById('app');
-        var backdrop = app && app.querySelector('[data-action="close"]');
-        if (backdrop) backdrop.addEventListener('click', closeReport);
-
-        var btnClose = document.getElementById('btnClose');
-        if (btnClose) btnClose.addEventListener('click', closeReport);
-
-        var btnCancel = document.getElementById('btnCancel');
-        if (btnCancel) btnCancel.addEventListener('click', closeReport);
-
-        var btnCloseSuccess = document.getElementById('btnCloseSuccess');
-        if (btnCloseSuccess) btnCloseSuccess.addEventListener('click', closeReport);
-
-        var form = document.getElementById('reportForm');
-        if (form) {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                submitReport();
+            state.reports.forEach(function (report) {
+                body.appendChild(buildReportCard(report));
             });
         }
+
+        modal.appendChild(body);
+
+        // Footer with refresh + close
+        var footer = el('div', { className: 'modal-footer' });
+        footer.appendChild(el('div', { className: 'modal-footer-hint' }));
+        var actions = el('div', { className: 'modal-footer-actions' });
+        actions.appendChild(el('button', {
+            className: 'btn btn-secondary', type: 'button', textContent: 'Refresh',
+            onClick: function () {
+                sendNuiCallback('refreshStatuses', {}).catch(function () { });
+            }
+        }));
+        actions.appendChild(el('button', {
+            className: 'btn btn-primary', type: 'button', textContent: 'Close',
+            onClick: closeStatusView
+        }));
+        footer.appendChild(actions);
+        modal.appendChild(footer);
+
+        appRoot.appendChild(modal);
     }
 
-    window.addEventListener('message', function(event) {
-        var data = event.data;
-        if (data.type === 'INIT') {
-            state.init = {
-                serverName: data.serverName,
-                cooldownRemaining: data.cooldownRemaining,
-                playerName: data.playerName,
-                theme: data.theme,
-                version: data.version
-            };
+    function buildReportCard(report) {
+        var isExpanded = state.expandedReportId === report.id;
+        var card = el('div', { className: 'report-card' + (isExpanded ? ' expanded' : '') });
+
+        // Header row: ID + badge
+        var header = el('div', { className: 'report-card-header' });
+        header.appendChild(el('span', { className: 'report-card-id', textContent: '#' + (report.ticketNumber || report.id) }));
+
+        var statusText = (report.status || 'open').replace(/_/g, ' ');
+        statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1);
+        var badgeClass = 'status-badge status-badge-' + (report.status || 'open').toLowerCase().replace(/\s+/g, '_');
+        header.appendChild(el('span', { className: badgeClass, textContent: statusText }));
+        card.appendChild(header);
+
+        // Subject
+        card.appendChild(el('div', { className: 'report-card-subject', textContent: escapeText(report.subject || 'Report') }));
+
+        // Meta
+        var meta = el('div', { className: 'report-card-meta' });
+        if (report.category) meta.appendChild(el('span', { textContent: escapeText(report.category) }));
+        if (report.lastUpdate || report.updatedAt || report.createdAt) {
+            meta.appendChild(el('span', { textContent: formatTimeAgo(report.lastUpdate || report.updatedAt || report.createdAt) }));
         }
+        card.appendChild(meta);
+
+        // Expanded details
+        var expanded = el('div', { className: 'report-card-expanded' });
+        if (report.category) expanded.appendChild(buildDetailRow('Category', report.category));
+        if (report.lastPublicUpdate) expanded.appendChild(buildDetailRow('Last update', report.lastPublicUpdate));
+        if (report.outcome) expanded.appendChild(buildDetailRow('Outcome', report.outcome));
+        if (report.evidenceCount != null) expanded.appendChild(buildDetailRow('Evidence', report.evidenceCount + ' item(s)'));
+        if (report.createdAt) expanded.appendChild(buildDetailRow('Submitted', formatTimeAgo(report.createdAt)));
+        card.appendChild(expanded);
+
+        // Click to toggle expand
+        card.addEventListener('click', function () {
+            if (state.expandedReportId === report.id) {
+                state.expandedReportId = null;
+            } else {
+                state.expandedReportId = report.id;
+            }
+            renderStatusView();
+        });
+
+        return card;
+    }
+
+    function buildDetailRow(label, value) {
+        return el('div', { className: 'report-detail-row' }, [
+            el('span', { className: 'report-detail-label', textContent: label }),
+            el('span', { className: 'report-detail-value', textContent: escapeText(String(value)) })
+        ]);
+    }
+
+    // ════════════════════════════════════════
+    // ██ SERVER STATS VIEW
+    // ════════════════════════════════════════
+
+    function openStatsView(data) {
+        state.activeView = 'stats';
+        renderStatsView(data.stats || data || {});
+    }
+
+    function closeStatsView() {
+        closeAll();
+        sendNuiCallback('closeServerStats', {}).catch(function () { });
+    }
+
+    function renderStatsView(stats) {
+        clearApp();
+        appRoot.appendChild(buildBackdrop(closeStatsView));
+
+        var modal = el('div', { className: 'modal modal-stats' });
+        modal.appendChild(buildModalHeader('Server Stats', 'Uptime, resources & recent errors', closeStatsView));
+
+        var body = el('div', { className: 'modal-body' });
+
+        // Stats grid
+        var grid = el('div', { className: 'stats-grid' });
+        grid.appendChild(buildStatItem('Server', stats.serverName || '--'));
+        grid.appendChild(buildStatItem('Uptime', formatUptime(stats.uptimeSeconds)));
+        grid.appendChild(buildStatItem('Players', stats.playerCount != null ? String(stats.playerCount) : '--'));
+        grid.appendChild(buildStatItem('Resources', stats.resourceCount != null ? String(stats.resourceCount) : '--'));
+
+        var memText = '--';
+        if (stats.memoryKb != null && stats.memoryKb >= 0) {
+            var mb = stats.memoryKb / 1024;
+            memText = mb >= 1 ? mb.toFixed(1) + ' MB' : stats.memoryKb + ' KB';
+        }
+        grid.appendChild(buildStatItem('Memory (Lua)', memText));
+
+        var hostMemText = '--';
+        if (stats.hostMemoryMb != null && stats.hostMemoryMb >= 0) {
+            hostMemText = stats.hostMemoryLuaFallback ? (stats.hostMemoryMb + ' MB (Lua)') : (stats.hostMemoryMb + ' MB');
+        }
+        grid.appendChild(buildStatItem('RAM (host)', hostMemText));
+
+        var cpuText = (stats.hostCpuPercent != null && stats.hostCpuPercent >= 0) ? (stats.hostCpuPercent + '%') : '--';
+        grid.appendChild(buildStatItem('CPU', cpuText));
+        body.appendChild(grid);
+
+        // Version
+        if (stats.serverVersion) {
+            body.appendChild(el('p', { className: 'stat-version', textContent: 'Version: ' + escapeText(String(stats.serverVersion).substring(0, 50)) }));
+        }
+
+        // Errors
+        var errors = stats.lastErrors || [];
+        var errSection = el('div', { className: 'errors-section' });
+        errSection.appendChild(el('h3', { className: 'errors-title', textContent: 'Last 5 errors' }));
+
+        if (errors.length === 0) {
+            errSection.appendChild(el('p', { className: 'no-errors', textContent: 'No recent errors recorded.' }));
+        } else {
+            var list = el('ul', { className: 'errors-list' });
+            errors.slice(0, 5).forEach(function (msg) {
+                list.appendChild(el('li', { className: 'error-item', textContent: escapeText(msg) }));
+            });
+            errSection.appendChild(list);
+        }
+        body.appendChild(errSection);
+        modal.appendChild(body);
+
+        // Footer
+        var footer = el('div', { className: 'modal-footer' });
+        footer.appendChild(el('div', { className: 'modal-footer-hint' }));
+        var actions = el('div', { className: 'modal-footer-actions' });
+        actions.appendChild(el('button', {
+            className: 'btn btn-primary', type: 'button', textContent: 'Close',
+            onClick: closeStatsView
+        }));
+        footer.appendChild(actions);
+        modal.appendChild(footer);
+
+        appRoot.appendChild(modal);
+    }
+
+    function buildStatItem(label, value) {
+        return el('div', { className: 'stat-item' }, [
+            el('span', { className: 'stat-label', textContent: label }),
+            el('span', { className: 'stat-value', textContent: escapeText(String(value)) })
+        ]);
+    }
+
+    // ════════════════════════════════════════
+    // ██ NUI MESSAGE ROUTER
+    // ════════════════════════════════════════
+
+    window.addEventListener('message', function (event) {
+        var data = event.data;
+
+        // New unified actions
+        switch (data.action) {
+            case 'INIT':
+                state.init = {
+                    serverName: data.serverName,
+                    cooldownRemaining: data.cooldownRemaining,
+                    playerName: data.playerName,
+                    theme: data.theme,
+                    version: data.version
+                };
+                return;
+
+            case 'OPEN_STATUS':
+                openStatusView();
+                return;
+
+            case 'STATUS_UPDATE':
+                updateStatuses(data.reports);
+                return;
+
+            case 'OPEN_STATS':
+                openStatsView(data);
+                return;
+
+            case 'CLOSE':
+                if (state.activeView === 'report') sendNuiCallback('closeReport', {}).catch(function () { });
+                else if (state.activeView === 'status') sendNuiCallback('closeStatus', {}).catch(function () { });
+                else if (state.activeView === 'stats') sendNuiCallback('closeServerStats', {}).catch(function () { });
+                closeAll();
+                return;
+        }
+
+        // Backward-compatible actions
         if (data.action === 'openReport') {
             if (data.type === 'INIT') {
                 state.init = state.init || {};
-                state.init.serverName = data.serverName || state.init.serverName;
-                state.init.cooldownRemaining = data.cooldownRemaining != null ? data.cooldownRemaining : state.init.cooldownRemaining;
-                state.init.playerName = data.playerName || state.init.playerName;
+                state.init.serverName = data.serverName || (state.init && state.init.serverName);
+                state.init.cooldownRemaining = data.cooldownRemaining != null ? data.cooldownRemaining : (state.init && state.init.cooldownRemaining);
+                state.init.playerName = data.playerName || (state.init && state.init.playerName);
             }
-            openReport();
+            openReportForm(data);
         } else if (data.action === 'closeReport') {
-            closeReport();
+            if (state.activeView === 'report') closeReportForm();
         } else if (data.action === 'reportSubmitted') {
             handleReportSubmitted(data);
         } else if (data.action === 'screenshotReady' && data.url) {
             if (state.form.evidenceUrls.indexOf(data.url) === -1) state.form.evidenceUrls.push(data.url);
             state.form.screenshotUrl = data.url;
-            renderFormContent();
-            renderEvidenceUrls();
+            if (state.activeView === 'report') renderReportWizard();
         } else if (data.action === 'openServerStats') {
-            openServerStatsPanel(data.stats || {});
+            openStatsView({ stats: data.stats || {} });
         } else if (data.action === 'closeServerStats') {
-            closeServerStatsPanel();
+            if (state.activeView === 'stats') closeStatsView();
         }
     });
 
-    function formatUptime(seconds) {
-        if (seconds == null || seconds < 0) return '—';
-        var h = Math.floor(seconds / 3600);
-        var m = Math.floor((seconds % 3600) / 60);
-        var s = Math.floor(seconds % 60);
-        if (h > 0) return h + 'h ' + m + 'm';
-        if (m > 0) return m + 'm ' + s + 's';
-        return s + 's';
-    }
+    // ── Keyboard ──
 
-    function openServerStatsPanel(stats) {
-        var app = document.getElementById('serverstats-app');
-        if (!app) return;
-        app.classList.remove('hidden');
-
-        var serverNameEl = document.getElementById('stat-serverName');
-        var uptimeEl = document.getElementById('stat-uptime');
-        var playersEl = document.getElementById('stat-players');
-        var resourcesEl = document.getElementById('stat-resources');
-        var memoryEl = document.getElementById('stat-memory');
-        var hostMemoryEl = document.getElementById('stat-hostMemory');
-        var cpuEl = document.getElementById('stat-cpu');
-        var versionEl = document.getElementById('stat-version');
-        var errorsList = document.getElementById('serverstatsErrors');
-        var noErrorsEl = document.getElementById('serverstatsNoErrors');
-
-        if (serverNameEl) serverNameEl.textContent = (stats.serverName && stats.serverName !== '') ? escapeText(stats.serverName) : '—';
-        if (uptimeEl) uptimeEl.textContent = formatUptime(stats.uptimeSeconds);
-        if (playersEl) playersEl.textContent = (stats.playerCount != null) ? String(stats.playerCount) : '—';
-        if (resourcesEl) resourcesEl.textContent = (stats.resourceCount != null) ? String(stats.resourceCount) : '—';
-        if (memoryEl) {
-            if (stats.memoryKb != null && stats.memoryKb >= 0) {
-                var mb = stats.memoryKb / 1024;
-                memoryEl.textContent = (mb >= 1 ? mb.toFixed(1) + ' MB' : stats.memoryKb + ' KB');
-            } else {
-                memoryEl.textContent = '—';
-            }
-        }
-        if (hostMemoryEl) {
-            if (stats.hostMemoryMb != null && stats.hostMemoryMb >= 0) {
-                hostMemoryEl.textContent = stats.hostMemoryLuaFallback ? (stats.hostMemoryMb + ' MB (Lua)') : (stats.hostMemoryMb + ' MB');
-            } else {
-                hostMemoryEl.textContent = '—';
-            }
-        }
-        if (cpuEl) cpuEl.textContent = (stats.hostCpuPercent != null && stats.hostCpuPercent >= 0) ? (stats.hostCpuPercent + '%') : '—';
-        if (versionEl) versionEl.textContent = (stats.serverVersion && stats.serverVersion !== '') ? ('Version: ' + escapeText(String(stats.serverVersion).substring(0, 50))) : '';
-
-        var errors = stats.lastErrors || [];
-        if (errorsList) {
-            errorsList.innerHTML = '';
-            errors.slice(0, 5).forEach(function(msg) {
-                var li = document.createElement('li');
-                li.className = 'modora-error-item';
-                li.textContent = escapeText(msg);
-                errorsList.appendChild(li);
-            });
-        }
-        if (noErrorsEl) noErrorsEl.classList.toggle('hidden', errors.length > 0);
-    }
-
-    function closeServerStatsPanel() {
-        var app = document.getElementById('serverstats-app');
-        if (app) app.classList.add('hidden');
-        sendNuiCallback('closeServerStats', {}).catch(function() {});
-    }
-
-    (function bindServerStatsUi() {
-        var btnClose = document.getElementById('btnCloseServerStats');
-        var btnCloseFooter = document.getElementById('btnCloseServerStatsFooter');
-        var backdrop = document.querySelector('#serverstats-app .modora-backdrop');
-        if (btnClose) btnClose.addEventListener('click', closeServerStatsPanel);
-        if (btnCloseFooter) btnCloseFooter.addEventListener('click', closeServerStatsPanel);
-        if (backdrop) backdrop.addEventListener('click', closeServerStatsPanel);
-    })();
-
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && state.view !== 'closed') {
-            closeReport();
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && state.activeView) {
+            if (state.activeView === 'report') closeReportForm();
+            else if (state.activeView === 'status') closeStatusView();
+            else if (state.activeView === 'stats') closeStatsView();
         }
     });
-
-    document.addEventListener('DOMContentLoaded', bindUi);
 })();

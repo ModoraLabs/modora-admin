@@ -2,19 +2,37 @@ fx_version 'cerulean'
 game 'gta5'
 
 author 'ModoraLabs'
-description 'Modora FiveM Bridge - Reports, heartbeat, moderation sync (kick/ban/warn from Discord)'
-version '1.1.0'
+description 'Modora FiveM Control Center - Reports, moderation, player intelligence, health monitoring'
+version '2.0.0'
 
 dependency 'screenshot-basic'
 
-client_scripts {
+shared_scripts {
     'config.lua',
-    'client/main.lua'
+    'shared/constants.lua',
+    'shared/locales/en.lua',
+    'shared/locales/nl.lua',
+}
+
+client_scripts {
+    'client/utils.lua',
+    'client/bootstrap.lua',
+    'client/ui.lua',
+    'client/reports.lua',
+    'client/moderation.lua',
+    'client/status.lua',
 }
 
 server_scripts {
-    'config.lua',
-    'server/main.lua'
+    'server/api.lua',
+    'server/auth.lua',
+    'server/permissions.lua',
+    'server/reports.lua',
+    'server/moderation.lua',
+    'server/stats.lua',
+    'server/uploads.lua',
+    'server/sync.lua',
+    'server/bootstrap.lua',
 }
 
 ui_page 'html/index.html'
@@ -22,5 +40,5 @@ ui_page 'html/index.html'
 files {
     'html/index.html',
     'html/styles.css',
-    'html/app.js'
+    'html/app.js',
 }

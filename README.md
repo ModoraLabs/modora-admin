@@ -1,6 +1,5 @@
 # Modora FiveM Admin
 
-Version: 1.0.9  
 Author: ModoraLabs
 
 FiveM resource: **Reports + Server Stats** — in‑game report form → Discord ticket, plus `/serverstats` panel for RAM/CPU + last errors.
@@ -155,4 +154,4 @@ With either method running, the `/serverstats` panel will display live host RAM/
 - Discord: https://discord.gg/modora
 - Website: https://modora.xyz
 - Docs: https://modora.xyz/docs
-- GitHub: https://github.com/ModoraLabs/modora-admin
+- GitLab: https://gitlab.modora.xyz/modoralabs/modora-admin

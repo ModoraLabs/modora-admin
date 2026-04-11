@@ -3,13 +3,7 @@ Config = {}
 -- ============================================
 -- API CONFIGURATION (REQUIRED)
 -- ============================================
--- API base URL (no trailing slash). Use hostname or IP; when using IP, set ModoraHostHeader.
-Config.ModoraAPIBase = 'http://api.modoralabs.com'
-
--- Host header when using an IP as base URL. Leave empty when using hostname.
-Config.ModoraHostHeader = ''
-
--- API token from the Modora dashboard (FiveM → your server → API).
+-- API token from the Modora dashboard (FiveM → your server → API Credentials).
 Config.APIToken = ''
 
 -- ============================================
@@ -63,33 +57,26 @@ Config.ModerationPollIntervalSeconds = 30
 Config.Debug = true
 Config.Locale = 'en'  -- 'nl' or 'en'
 
-Config.Messages = {
-    ['nl'] = {
-        ['report_opened'] = 'Report menu geopend. Gebruik ESC om te sluiten.',
-        ['report_sent'] = 'Je report is verzonden! Ticket ID: %s',
-        ['report_failed'] = 'Je report kon niet worden verzonden. Probeer het later opnieuw.',
-        ['cooldown_active'] = 'Je moet %d seconden wachten voordat je een nieuw report kunt maken.',
-        ['no_nearby_players'] = 'Geen spelers in de buurt gevonden.',
-        ['upload_failed'] = 'Upload van bijlage mislukt.',
-        ['config_failed'] = 'Modora API-token niet geconfigureerd. Controleer config.lua.',
-        ['auth_failed'] = 'Authenticatie mislukt. Controleer het Modora API-token in het dashboard (FiveM → jouw server → API Credentials).',
-        ['serverstats_denied'] = 'Je hebt geen rechten om serverstatistieken te bekijken.',
-        ['serverstats_opened'] = 'Serverstatistieken geopend.',
-    },
-    ['en'] = {
-        ['report_opened'] = 'Report menu opened. Press ESC to close.',
-        ['report_sent'] = 'Your report has been sent! Ticket ID: %s',
-        ['report_failed'] = 'Your report could not be sent. Please try again later.',
-        ['cooldown_active'] = 'You must wait %d seconds before creating a new report.',
-        ['no_nearby_players'] = 'No nearby players found.',
-        ['upload_failed'] = 'Failed to upload attachment.',
-        ['config_failed'] = 'Modora API token not configured. Check config.lua.',
-        ['auth_failed'] = 'Authentication failed. Check the Modora API token in the dashboard (FiveM → your server → API Credentials).',
-        ['serverstats_denied'] = 'You do not have permission to view server statistics.',
-        ['serverstats_opened'] = 'Server statistics opened.',
-    }
-}
+-- Locale messages are loaded from shared/locales/*.lua into the global Locales table.
+-- Config.Messages is kept as a fallback for users who added custom keys in config.lua.
+Config.Messages = Config.Messages or {}
+
+Locales = Locales or {}
 
 function GetMessage(key)
-    return Config.Messages[Config.Locale][key] or Config.Messages['en'][key] or key
+    local locale = Config.Locale or 'en'
+    -- Check shared/locales first, then Config.Messages fallback
+    if Locales[locale] and Locales[locale][key] then
+        return Locales[locale][key]
+    end
+    if Locales['en'] and Locales['en'][key] then
+        return Locales['en'][key]
+    end
+    if Config.Messages[locale] and Config.Messages[locale][key] then
+        return Config.Messages[locale][key]
+    end
+    if Config.Messages['en'] and Config.Messages['en'][key] then
+        return Config.Messages['en'][key]
+    end
+    return key
 end
