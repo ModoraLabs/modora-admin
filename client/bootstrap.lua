@@ -38,7 +38,7 @@ RegisterCommand(Config.ReportCommand, function()
         serverName = serverName,
         cooldownRemaining = 0,
         playerName = GetPlayerName(PlayerId()),
-        version = '2.0.0'
+        version = '2.0.1'
     })
 
     TriggerEvent('chat:addMessage', {

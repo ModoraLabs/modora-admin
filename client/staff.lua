@@ -5,9 +5,10 @@
 
 isStaffPanelOpen = false
 
--- ── Open staff panel with /mstaff or keybind ──
+-- ── Open staff panel ──
 
-RegisterCommand('mstaff', function()
+local function openStaffPanel()
+    if Config.StaffPanelEnabled == false then return end
     if isMenuOpen or isServerStatsOpen then return end
     if isStaffPanelOpen then
         SetNuiFocus(false, false)
@@ -20,13 +21,24 @@ RegisterCommand('mstaff', function()
     SetNuiFocus(true, true)
     SendNUIMessage({ action = 'OPEN_STAFF' })
 
-    -- Request data
+    -- Request data (server checks ACE permission before responding)
     TriggerServerEvent('modora:staff:getReports')
     TriggerServerEvent('modora:staff:getPlayers')
-end, false)
+end
 
--- Register keybind (F6 default for staff)
-RegisterKeyMapping('mstaff', 'Open Modora Staff Panel', 'keyboard', 'F6')
+-- Register command (configurable, can be disabled)
+local staffCommand = Config.StaffPanelCommand
+if staffCommand and staffCommand ~= false and staffCommand ~= 'false' and staffCommand ~= '' then
+    RegisterCommand(staffCommand, function()
+        openStaffPanel()
+    end, false)
+
+    -- Register keybind (configurable, can be disabled)
+    local staffKeybind = Config.StaffPanelKeybind
+    if staffKeybind and staffKeybind ~= false and staffKeybind ~= 'false' and staffKeybind ~= '' then
+        RegisterKeyMapping(staffCommand, 'Open Modora Staff Panel', 'keyboard', staffKeybind)
+    end
+end
 
 -- ── NUI callbacks ──
 

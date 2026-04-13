@@ -3,15 +3,27 @@
 -- ============================================
 -- Depends on: server/api.lua, server/permissions.lua, server/auth.lua
 
--- Staff permission check (reuse existing hasServerStatsPermission or ACE)
+-- Staff permission check — respects Config.StaffPanelEnabled and ACE
 function hasStaffPermission(source)
     if not source or source == 0 then return false end
-    -- Use ACE permission first
-    if IsPlayerAceAllowed(source, 'modora.staff') then
+
+    -- Check if staff panel is enabled at all
+    if Config.StaffPanelEnabled == false then
+        return false
+    end
+
+    -- Check ACE permission (primary)
+    local acePermission = Config.StaffPanelAcePermission or 'modora.staff'
+    if IsPlayerAceAllowed(source, acePermission) then
         return true
     end
-    -- Fall back to server stats permission (same staff who can see stats can use staff panel)
-    return hasServerStatsPermission(source)
+
+    -- Optionally fall back to server stats permission (TXAdmin/ACE)
+    if Config.StaffPanelFallbackToStatsPermission ~= false then
+        return hasServerStatsPermission(source)
+    end
+
+    return false
 end
 
 -- ── Fetch open reports from API ──
@@ -182,10 +194,38 @@ CreateThread(function()
     -- Wait for server to be fully started
     Wait(15000)
 
+    -- Check if staff notifications are enabled
+    if Config.StaffNotificationsEnabled == false then
+        if Config.Debug then
+            print('[Modora Staff] Staff notifications disabled in config')
+        end
+        return
+    end
+
+    if Config.StaffPanelEnabled == false then
+        if Config.Debug then
+            print('[Modora Staff] Staff panel disabled — skipping notification thread')
+        end
+        return
+    end
+
+    local interval = tonumber(Config.StaffNotificationIntervalSeconds or 60) or 60
+    if interval <= 0 then
+        if Config.Debug then
+            print('[Modora Staff] Staff notification interval = 0, disabled')
+        end
+        return
+    end
+
+    local waitMs = math.max(interval * 1000, 10000) -- Minimum 10 seconds
     local lastPendingCount = 0
 
+    if Config.Debug then
+        print('[Modora Staff] Staff notifications enabled, interval=' .. tostring(interval) .. 's')
+    end
+
     while true do
-        Wait(60000) -- Check every 60 seconds
+        Wait(waitMs)
 
         local base, _, token = getEffectiveAPIConfig()
         if not base or base == '' or not token or token == '' then

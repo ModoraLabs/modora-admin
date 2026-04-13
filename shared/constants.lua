@@ -5,7 +5,7 @@
 ModoraConstants = {}
 
 -- Resource version (read from fxmanifest at runtime)
-ModoraConstants.VERSION = '2.0.0'
+ModoraConstants.VERSION = '2.0.1'
 
 -- Report statuses
 ModoraConstants.ReportStatus = {

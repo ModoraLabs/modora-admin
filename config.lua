@@ -52,6 +52,27 @@ Config.HeartbeatIntervalSeconds = 120
 Config.ModerationPollIntervalSeconds = 30
 
 -- ============================================
+-- STAFF PANEL (/mstaff or F6)
+-- ============================================
+-- Enable/disable the in-game staff panel entirely. Set to false to hide it from all players.
+Config.StaffPanelEnabled = true
+-- Command to open the staff panel. Set to false to disable the command (keybind still works if set).
+Config.StaffPanelCommand = 'mstaff'
+-- Keybind to open the staff panel. Set to 'false' to disable. Examples: 'F6', 'F8', 'HOME'.
+Config.StaffPanelKeybind = 'F6'
+-- ACE permission required to open the staff panel.
+-- Grant in server.cfg: add_ace group.admin modora.staff allow
+-- Or per player: add_ace identifier.discord:123456 modora.staff allow
+Config.StaffPanelAcePermission = 'modora.staff'
+-- If true, also allow players who have ServerStats permission (TXAdmin/ACE) to use the staff panel.
+-- If false, ONLY the StaffPanelAcePermission ACE is checked (strictest).
+Config.StaffPanelFallbackToStatsPermission = true
+-- Enable in-game notifications for staff (e.g. new high-severity reports). Requires staff permission.
+Config.StaffNotificationsEnabled = true
+-- How often to check for new reports to notify staff (seconds). Set to 0 to disable.
+Config.StaffNotificationIntervalSeconds = 60
+
+-- ============================================
 -- LOCALE & LOGGING
 -- ============================================
 Config.Debug = true
