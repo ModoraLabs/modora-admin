@@ -28,30 +28,52 @@ Citizen.CreateThread(function()
     end
 
     -- GitLab API: list releases (sorted by released_at desc), first = latest
-    PerformHttpRequest('https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1', function(statusCode, response, headers)
+    local gitlabUrl = 'https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1'
+    if Config.Debug then
+        print('[Modora] Update check URL: ' .. gitlabUrl)
+    end
+
+    PerformHttpRequest(gitlabUrl, function(statusCode, response)
         local statusNum = tonumber(statusCode) or 0
-        if statusNum == 200 and response then
-            local success, data = pcall(json.decode, response)
-            if success and data and type(data) == 'table' and #data > 0 and data[1].tag_name then
-                local latestVersion = string.gsub(data[1].tag_name, '^v', '')
-                local currentVersion = RESOURCE_VERSION
 
-                if Config.Debug then
-                    print('[Modora] Current version: ' .. currentVersion)
-                    print('[Modora] Latest version: ' .. latestVersion)
-                end
+        if statusNum == 0 then
+            print('^3[Modora] Update check: could not reach GitLab (timeout or DNS failure)^7')
+            print('^3[Modora] Current version: ^7' .. RESOURCE_VERSION)
+            return
+        end
 
-                if latestVersion ~= currentVersion then
-                    print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
-                    print('^3[Modora] Current version: ^7' .. currentVersion)
-                    print('^3[Modora] Latest version: ^7' .. latestVersion)
-                    print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
-                else
-                    if Config.Debug then
-                        print('[Modora] ✅ Resource is up to date!')
-                    end
-                end
-            end
+        if statusNum ~= 200 then
+            print('^3[Modora] Update check: GitLab returned HTTP ' .. tostring(statusCode) .. '^7')
+            print('^3[Modora] Current version: ^7' .. RESOURCE_VERSION)
+            return
+        end
+
+        if not response or response == '' then
+            print('^3[Modora] Update check: empty response from GitLab^7')
+            return
+        end
+
+        local success, data = pcall(json.decode, response)
+        if not success or not data or type(data) ~= 'table' or #data == 0 then
+            print('^3[Modora] Update check: could not parse GitLab response^7')
+            return
+        end
+
+        if not data[1].tag_name then
+            print('^3[Modora] Update check: no releases found on GitLab^7')
+            return
+        end
+
+        local latestVersion = string.gsub(data[1].tag_name, '^v', '')
+        local currentVersion = RESOURCE_VERSION
+
+        if latestVersion ~= currentVersion then
+            print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
+            print('^3[Modora] Current version: ^7' .. currentVersion)
+            print('^3[Modora] Latest version: ^7' .. latestVersion)
+            print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
+        else
+            print('^2[Modora] ✅ Resource is up to date (v' .. currentVersion .. ')^7')
         end
     end, 'GET', '', {
         ['User-Agent'] = 'Modora-FiveM-Resource',
