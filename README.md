@@ -32,7 +32,7 @@ Config.APIToken      = 'your_api_token_here'
 
 -- Report command / keybind
 Config.ReportCommand = 'report'
-Config.ReportKeybind = 'F7'     -- or 'false' to disable keybind
+Config.ReportKeybind = 'F7'     -- or false to disable keybind
 
 -- Nearby players selector
 Config.NearbyRadius      = 30.0

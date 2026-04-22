@@ -2,6 +2,18 @@
 
 All notable changes to modora-admin are documented here.
 
+## [2.0.2] - 2026-04-22
+
+### Fixed
+
+- **Report keybind:** `Config.ReportKeybind` set to `false` (or string `'false'`, `nil`, empty string) no longer registers a broken key mapping in FiveM's keybind settings. Previously the string `'false'` was passed through to `RegisterKeyMapping`, causing a dead entry to persist in `citizen/settings.xml`.
+
+### Changed
+
+- Default `Config.ReportKeybind` is now the boolean `false` instead of the string `'false'`. Both remain accepted as "disabled"; valid key names (e.g. `'F7'`) continue to work.
+
+---
+
 ## [1.1.0] - 2026-03-10
 
 ### Added

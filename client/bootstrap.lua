@@ -38,7 +38,7 @@ RegisterCommand(Config.ReportCommand, function()
         serverName = serverName,
         cooldownRemaining = 0,
         playerName = GetPlayerName(PlayerId()),
-        version = '2.0.1'
+        version = '2.0.2'
     })
 
     TriggerEvent('chat:addMessage', {
@@ -48,8 +48,9 @@ RegisterCommand(Config.ReportCommand, function()
     })
 end, false)
 
-if Config.ReportKeybind and Config.ReportKeybind ~= false then
-    RegisterKeyMapping(Config.ReportCommand, 'Open Report Menu', 'keyboard', Config.ReportKeybind)
+local keybind = Config.ReportKeybind
+if keybind and keybind ~= false and type(keybind) == 'string' and keybind ~= '' and keybind:lower() ~= 'false' then
+    RegisterKeyMapping(Config.ReportCommand, 'Open Report Menu', 'keyboard', keybind)
 end
 
 -- Server stats command

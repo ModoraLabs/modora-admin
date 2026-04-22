@@ -10,7 +10,7 @@ Config.APIToken = ''
 -- REPORT COMMAND & KEYBIND
 -- ============================================
 Config.ReportCommand = 'report'
-Config.ReportKeybind = 'false' -- Or F7 as example
+Config.ReportKeybind = false -- Set to false to disable, or use a key name like 'F7'
 
 -- ============================================
 -- NEARBY PLAYERS SETTINGS
