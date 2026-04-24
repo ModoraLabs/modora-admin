@@ -20,65 +20,87 @@ AddEventHandler('onResourceStart', function(resourceName)
 end)
 
 -- Version check thread
-Citizen.CreateThread(function()
-    Citizen.Wait(5000)
+local UPDATE_CHECK_MAX_ATTEMPTS = 4
+local UPDATE_CHECK_BACKOFF_MS = { 15000, 30000, 60000 } -- waits between attempts 1→2, 2→3, 3→4
 
-    if Config.Debug then
-        print('[Modora] Checking for updates from GitLab...')
+local function handleUpdateCheckResult(data)
+    if not data[1] or not data[1].tag_name then
+        print('^3[Modora] Update check: no releases found on GitLab^7')
+        return
     end
 
-    -- GitLab API: list releases (sorted by released_at desc), first = latest
-    local gitlabUrl = 'https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1'
-    if Config.Debug then
-        print('[Modora] Update check URL: ' .. gitlabUrl)
-    end
+    local latestVersion = string.gsub(data[1].tag_name, '^v', '')
+    local currentVersion = RESOURCE_VERSION
 
+    if latestVersion ~= currentVersion then
+        print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
+        print('^3[Modora] Current version: ^7' .. currentVersion)
+        print('^3[Modora] Latest version: ^7' .. latestVersion)
+        print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
+    else
+        print('^2[Modora] ✅ Resource is up to date (v' .. currentVersion .. ')^7')
+    end
+end
+
+local function attemptUpdateCheck(attempt, gitlabUrl)
     PerformHttpRequest(gitlabUrl, function(statusCode, response)
         local statusNum = tonumber(statusCode) or 0
 
+        -- Success path
+        if statusNum == 200 and response and response ~= '' then
+            local ok, data = pcall(json.decode, response)
+            if ok and type(data) == 'table' and #data > 0 then
+                handleUpdateCheckResult(data)
+                return
+            end
+            if Config.Debug then
+                print('^3[Modora] Update check: could not parse GitLab response^7')
+            end
+        end
+
+        -- Retryable: transient network errors (status 0) or 5xx
+        local retryable = (statusNum == 0) or (statusNum >= 500 and statusNum < 600)
+        if retryable and attempt < UPDATE_CHECK_MAX_ATTEMPTS then
+            local nextWait = UPDATE_CHECK_BACKOFF_MS[attempt] or 60000
+            if Config.Debug then
+                local reason = (statusNum == 0) and 'network error' or ('HTTP ' .. tostring(statusCode))
+                print('^3[Modora] Update check attempt ' .. attempt .. '/' .. UPDATE_CHECK_MAX_ATTEMPTS
+                    .. ' failed (' .. reason .. '), retrying in ' .. math.floor(nextWait / 1000) .. 's^7')
+            end
+            Citizen.SetTimeout(nextWait, function()
+                attemptUpdateCheck(attempt + 1, gitlabUrl)
+            end)
+            return
+        end
+
+        -- Give up — print a single concise line, not a scary warning.
         if statusNum == 0 then
-            print('^3[Modora] Update check: could not reach GitLab (timeout or DNS failure)^7')
-            print('^3[Modora] Current version: ^7' .. RESOURCE_VERSION)
-            return
-        end
-
-        if statusNum ~= 200 then
-            print('^3[Modora] Update check: GitLab returned HTTP ' .. tostring(statusCode) .. '^7')
-            print('^3[Modora] Current version: ^7' .. RESOURCE_VERSION)
-            return
-        end
-
-        if not response or response == '' then
-            print('^3[Modora] Update check: empty response from GitLab^7')
-            return
-        end
-
-        local success, data = pcall(json.decode, response)
-        if not success or not data or type(data) ~= 'table' or #data == 0 then
-            print('^3[Modora] Update check: could not parse GitLab response^7')
-            return
-        end
-
-        if not data[1].tag_name then
-            print('^3[Modora] Update check: no releases found on GitLab^7')
-            return
-        end
-
-        local latestVersion = string.gsub(data[1].tag_name, '^v', '')
-        local currentVersion = RESOURCE_VERSION
-
-        if latestVersion ~= currentVersion then
-            print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
-            print('^3[Modora] Current version: ^7' .. currentVersion)
-            print('^3[Modora] Latest version: ^7' .. latestVersion)
-            print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
-        else
-            print('^2[Modora] ✅ Resource is up to date (v' .. currentVersion .. ')^7')
+            print('^3[Modora] Update check skipped: GitLab unreachable after '
+                .. UPDATE_CHECK_MAX_ATTEMPTS .. ' attempts (running v' .. RESOURCE_VERSION .. ')^7')
+        elseif statusNum ~= 200 then
+            print('^3[Modora] Update check: GitLab returned HTTP ' .. tostring(statusCode)
+                .. ' (running v' .. RESOURCE_VERSION .. ')^7')
         end
     end, 'GET', '', {
         ['User-Agent'] = 'Modora-FiveM-Resource',
         ['Accept'] = 'application/json'
     })
+end
+
+Citizen.CreateThread(function()
+    -- Wait long enough for FiveM's HTTP stack + DNS to settle after boot.
+    Citizen.Wait(30000)
+
+    if Config.Debug then
+        print('[Modora] Checking for updates from GitLab...')
+    end
+
+    local gitlabUrl = 'https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1'
+    if Config.Debug then
+        print('[Modora] Update check URL: ' .. gitlabUrl)
+    end
+
+    attemptUpdateCheck(1, gitlabUrl)
 end)
 
 -- ============================================
