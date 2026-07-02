@@ -6,9 +6,10 @@
 -- Depends on: server/api.lua, server/stats.lua, server/reports.lua
 
 local RESOURCE_VERSION = GetResourceMetadata(GetCurrentResourceName(), 'version', 0) or '0.0.0'
--- GitLab project path (URL-encoded for API: modoralabs%2Fmodora-admin)
-local GITLAB_PROJECT = 'modoralabs%2Fmodora-admin'
-local GITLAB_RELEASES_URL = 'https://gitlab.modora.xyz/modoralabs/modora-admin/-/releases'
+-- Releases are published to GitHub by .github/workflows/release.yml on each v* tag,
+-- so the update check must query GitHub (the old GitLab project is stale/unused).
+local GITHUB_REPO = 'ModoraLabs/modora-admin'
+local GITHUB_RELEASES_URL = 'https://github.com/ModoraLabs/modora-admin/releases'
 
 AddEventHandler('onResourceStart', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then
@@ -25,7 +26,7 @@ local UPDATE_CHECK_BACKOFF_MS = { 15000, 30000, 60000 } -- waits between attempt
 
 local function handleUpdateCheckResult(data)
     if not data[1] or not data[1].tag_name then
-        print('^3[Modora] Update check: no releases found on GitLab^7')
+        print('^3[Modora] Update check: no releases found on GitHub^7')
         return
     end
 
@@ -36,14 +37,14 @@ local function handleUpdateCheckResult(data)
         print('^3[Modora] ⚠️ UPDATE AVAILABLE!^7')
         print('^3[Modora] Current version: ^7' .. currentVersion)
         print('^3[Modora] Latest version: ^7' .. latestVersion)
-        print('^3[Modora] Download: ' .. GITLAB_RELEASES_URL .. '^7')
+        print('^3[Modora] Download: ' .. GITHUB_RELEASES_URL .. '^7')
     else
         print('^2[Modora] ✅ Resource is up to date (v' .. currentVersion .. ')^7')
     end
 end
 
-local function attemptUpdateCheck(attempt, gitlabUrl)
-    PerformHttpRequest(gitlabUrl, function(statusCode, response)
+local function attemptUpdateCheck(attempt, releasesUrl)
+    PerformHttpRequest(releasesUrl, function(statusCode, response)
         local statusNum = tonumber(statusCode) or 0
 
         -- Success path
@@ -54,7 +55,7 @@ local function attemptUpdateCheck(attempt, gitlabUrl)
                 return
             end
             if Config.Debug then
-                print('^3[Modora] Update check: could not parse GitLab response^7')
+                print('^3[Modora] Update check: could not parse GitHub response^7')
             end
         end
 
@@ -68,17 +69,17 @@ local function attemptUpdateCheck(attempt, gitlabUrl)
                     .. ' failed (' .. reason .. '), retrying in ' .. math.floor(nextWait / 1000) .. 's^7')
             end
             Citizen.SetTimeout(nextWait, function()
-                attemptUpdateCheck(attempt + 1, gitlabUrl)
+                attemptUpdateCheck(attempt + 1, releasesUrl)
             end)
             return
         end
 
         -- Give up — print a single concise line, not a scary warning.
         if statusNum == 0 then
-            print('^3[Modora] Update check skipped: GitLab unreachable after '
+            print('^3[Modora] Update check skipped: GitHub unreachable after '
                 .. UPDATE_CHECK_MAX_ATTEMPTS .. ' attempts (running v' .. RESOURCE_VERSION .. ')^7')
         elseif statusNum ~= 200 then
-            print('^3[Modora] Update check: GitLab returned HTTP ' .. tostring(statusCode)
+            print('^3[Modora] Update check: GitHub returned HTTP ' .. tostring(statusCode)
                 .. ' (running v' .. RESOURCE_VERSION .. ')^7')
         end
     end, 'GET', '', {
@@ -92,15 +93,17 @@ Citizen.CreateThread(function()
     Citizen.Wait(30000)
 
     if Config.Debug then
-        print('[Modora] Checking for updates from GitLab...')
+        print('[Modora] Checking for updates from GitHub...')
     end
 
-    local gitlabUrl = 'https://gitlab.modora.xyz/api/v4/projects/' .. GITLAB_PROJECT .. '/releases?per_page=1'
+    -- GitHub Releases API returns an array; ?per_page=1 gives the latest release,
+    -- matching the array shape handleUpdateCheckResult expects (data[1].tag_name).
+    local releasesUrl = 'https://api.github.com/repos/' .. GITHUB_REPO .. '/releases?per_page=1'
     if Config.Debug then
-        print('[Modora] Update check URL: ' .. gitlabUrl)
+        print('[Modora] Update check URL: ' .. releasesUrl)
     end
 
-    attemptUpdateCheck(1, gitlabUrl)
+    attemptUpdateCheck(1, releasesUrl)
 end)
 
 -- ============================================

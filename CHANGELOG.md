@@ -2,6 +2,13 @@
 
 All notable changes to modora-admin are documented here.
 
+## [2.0.4] - 2026-07-02
+
+### Fixed
+
+- **`/reportstatus`:** the server-side status poll only accepted HTTP `200` and used a non-retrying request, so report statuses were silently dropped when the API responded with a `302` (e.g. behind a reverse proxy that returns the JSON body with a redirect). It now uses the resilient request path, accepts both `200` and `302`, and always updates the client.
+- **Update/version check:** the resource checked for new versions against a stale GitLab project, so updates were never detected correctly. It now queries the GitHub Releases API (`ModoraLabs/modora-admin`), where releases are actually published.
+
 ## [2.0.2] - 2026-04-22
 
 ### Fixed

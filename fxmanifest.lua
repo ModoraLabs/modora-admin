@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'ModoraLabs'
 description 'Modora FiveM Control Center - Reports, moderation, player intelligence, health monitoring'
-version '2.0.3'
+version '2.0.4'
 
 dependency 'screenshot-basic'
 
