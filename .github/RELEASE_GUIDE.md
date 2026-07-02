@@ -1,22 +1,23 @@
 # 🚀 Release Guide
 
-This guide explains how to create releases for modora-admin on GitLab.
+This guide explains how to create releases for modora-admin on GitHub. Releases are
+published automatically by GitHub Actions (`.github/workflows/release.yml`) whenever a
+`v*.*.*` tag is pushed.
 
 ## 📋 Release via Git tag
-
-Releases on GitLab are created from git tags (semantic versioning).
 
 ### Steps:
 
 1. **Update version in `fxmanifest.lua`**
    ```lua
-   version '1.0.2'  -- Update to new version
+   version '2.0.4'  -- Update to new version
    ```
 
-2. **Update `CHANGELOG.md`** with the new version entry
+2. **Update `CHANGELOG.md`** with the new version entry (the workflow copies these notes
+   into the GitHub Release body — the heading must match `## [<version>] - <date>`)
    ```markdown
-   ## [1.0.2] - 2025-01-29
-   
+   ## [2.0.4] - 2026-07-02
+
    ### Fixed
    - Fixed issue X
    - Improved feature Y
@@ -25,60 +26,41 @@ Releases on GitLab are created from git tags (semantic versioning).
 3. **Commit and push your changes**
    ```bash
    git add .
-   git commit -m "Release v1.0.2"
-   git push origin main
+   git commit -m "Release v2.0.4"
+   git push github main
    ```
 
-4. **Create and push a git tag**
+4. **Create and push a git tag** — this triggers the release workflow
    ```bash
-   git tag -a v1.0.2 -m "Release v1.0.2"
-   git push origin v1.0.2
+   git tag -a v2.0.4 -m "Release v2.0.4"
+   git push github v2.0.4
    ```
 
-5. **Create the release on GitLab:**
-   - Go to **Deploy** → **Releases** → **New release**
-   - Select the tag (e.g. `v1.0.2`)
-   - Fill in title and description (copy from CHANGELOG.md)
-   - Add release assets (zip) if needed
-   - Click **Create release**
-
-## 🔧 Manual Release (Alternative)
-
-If you prefer to create releases fully manually in GitLab:
-
-1. Go to **Deploy** → **Releases** → **New release**
-2. Create a new tag (e.g., `v1.0.2`) or select an existing one
-3. Fill in release title and description (copy from CHANGELOG.md)
-4. Upload release assets (zip) if needed
-5. Click **Create release**
+5. **Done.** GitHub Actions builds `modora-admin-<version>.zip` and creates the release at
+   **Releases** automatically. No manual release step is needed.
 
 ## 📝 Release Checklist
 
-- [ ] Version updated in `fxmanifest.lua`
-- [ ] Version updated in `server.lua` (RESOURCE_VERSION)
-- [ ] Version updated in `README.md`
-- [ ] CHANGELOG.md updated with new version entry
-- [ ] All changes committed and pushed
-- [ ] Git tag created and pushed (for automatic release)
+- [ ] Version updated in `fxmanifest.lua` (`RESOURCE_VERSION` is read from this at runtime)
+- [ ] Version updated in `README.md` (if referenced there)
+- [ ] CHANGELOG.md updated with new version entry (heading matches `## [<version>] - <date>`)
+- [ ] All changes committed and pushed to `main`
+- [ ] Git tag created and pushed (triggers the automatic release)
 
 ## 🎯 Version Format
 
 Follow [Semantic Versioning](https://semver.org/):
-- **MAJOR.MINOR.PATCH** (e.g., 1.0.1, 1.1.0, 2.0.0)
-- Tag format: **vMAJOR.MINOR.PATCH** (e.g., v1.0.1, v1.1.0, v2.0.0)
+- **MAJOR.MINOR.PATCH** (e.g., 2.0.3, 2.1.0, 3.0.0)
+- Tag format: **vMAJOR.MINOR.PATCH** (e.g., v2.0.3, v2.1.0, v3.0.0)
 
 ## 📦 What Gets Included in Releases
 
-The automatic release workflow includes:
-- All `.lua` files
-- All `.md` files (README, CHANGELOG, etc.)
-- `html/` folder with all assets
-- `LICENSE` file
+The release workflow packages:
+- `config.lua`, `fxmanifest.lua`, `README.md`, `LICENSE`, `CHANGELOG.md`
+- `client/`, `server/`, `html/` folders with all assets
 
 ## 🔗 Repository
 
-- **GitLab:** https://gitlab.modora.xyz/modoralabs/modora-admin
-- The in-resource version check uses the GitLab Releases API to compare the current version with the latest release.
-
-
-
+- **GitHub:** https://github.com/ModoraLabs/modora-admin
+- The in-resource version check (`server/bootstrap.lua`) uses the GitHub Releases API to
+  compare the current version with the latest release.

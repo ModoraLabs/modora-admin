@@ -154,4 +154,4 @@ With either method running, the `/serverstats` panel will display live host RAM/
 - Discord: https://discord.gg/modora
 - Website: https://modora.xyz
 - Docs: https://modora.xyz/docs
-- GitLab: https://gitlab.modora.xyz/modoralabs/modora-admin
+- GitHub: https://github.com/ModoraLabs/modora-admin
