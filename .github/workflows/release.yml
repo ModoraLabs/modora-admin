@@ -102,7 +102,7 @@ jobs:
           ZIP_NAME="modora-admin-${VERSION}.zip"
           mkdir -p release_build
           cp config.lua fxmanifest.lua README.md LICENSE release_build/
-          cp -r client server html release_build/
+          cp -r client server html shared release_build/
           [ -f CHANGELOG.md ] && cp CHANGELOG.md release_build/ || true
           cd release_build && zip -r "../${ZIP_NAME}" . && cd ..
 

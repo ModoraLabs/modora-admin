@@ -2,6 +2,12 @@
 
 All notable changes to modora-admin are documented here.
 
+## [2.0.5] - 2026-07-02
+
+### Fixed
+
+- **Release packaging:** the release zip did not include the `shared/` folder, so servers running a downloaded release logged `could not find shared_script shared/constants.lua` (and `shared/locales/en.lua`, `shared/locales/nl.lua`) and lost shared constants/translations. The release workflow now packages `shared/`. Re-download this release to resolve the warnings.
+
 ## [2.0.4] - 2026-07-02
 
 ### Fixed
