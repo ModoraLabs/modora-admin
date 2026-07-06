@@ -1119,12 +1119,24 @@
     }
 
     function buildReportCard(report) {
-        var isExpanded = state.expandedReportId === report.id;
+        // API returns snake_case keys; keep camelCase fallbacks for backwards compatibility.
+        var reportId = report.report_id != null ? report.report_id : report.id;
+        var categoryLabel = report.category_label || report.category;
+        var createdAt = report.created_at || report.createdAt;
+        var lastUpdatedAt = report.last_updated_at || report.updatedAt || createdAt;
+        var lastPublicUpdate = report.last_public_update || report.lastPublicUpdate;
+        var evidenceCount = report.evidence_count != null ? report.evidence_count : report.evidenceCount;
+        // Live Discord channel only exists while the ticket is open; null once resolved/closed.
+        var channelName = report.channel_name || report.channelName;
+
+        var isExpanded = state.expandedReportId === reportId;
         var card = el('div', { className: 'report-card' + (isExpanded ? ' expanded' : '') });
 
-        // Header row: ID + badge
+        // Header row: channel (open tickets only) + badge
         var header = el('div', { className: 'report-card-header' });
-        header.appendChild(el('span', { className: 'report-card-id', textContent: '#' + (report.ticketNumber || report.id) }));
+        if (channelName) {
+            header.appendChild(el('span', { className: 'report-card-id', textContent: '#' + channelName }));
+        }
 
         var statusText = (report.status || 'open').replace(/_/g, ' ');
         statusText = statusText.charAt(0).toUpperCase() + statusText.slice(1);
@@ -1137,27 +1149,27 @@
 
         // Meta
         var meta = el('div', { className: 'report-card-meta' });
-        if (report.category) meta.appendChild(el('span', { textContent: escapeText(report.category) }));
-        if (report.lastUpdate || report.updatedAt || report.createdAt) {
-            meta.appendChild(el('span', { textContent: formatTimeAgo(report.lastUpdate || report.updatedAt || report.createdAt) }));
+        if (categoryLabel) meta.appendChild(el('span', { textContent: escapeText(categoryLabel) }));
+        if (lastUpdatedAt) {
+            meta.appendChild(el('span', { textContent: formatTimeAgo(lastUpdatedAt) }));
         }
         card.appendChild(meta);
 
         // Expanded details
         var expanded = el('div', { className: 'report-card-expanded' });
-        if (report.category) expanded.appendChild(buildDetailRow('Category', report.category));
-        if (report.lastPublicUpdate) expanded.appendChild(buildDetailRow('Last update', report.lastPublicUpdate));
+        if (categoryLabel) expanded.appendChild(buildDetailRow('Category', categoryLabel));
+        if (lastPublicUpdate) expanded.appendChild(buildDetailRow('Last update', lastPublicUpdate));
         if (report.outcome) expanded.appendChild(buildDetailRow('Outcome', report.outcome));
-        if (report.evidenceCount != null) expanded.appendChild(buildDetailRow('Evidence', report.evidenceCount + ' item(s)'));
-        if (report.createdAt) expanded.appendChild(buildDetailRow('Submitted', formatTimeAgo(report.createdAt)));
+        if (evidenceCount != null) expanded.appendChild(buildDetailRow('Evidence', evidenceCount + ' item(s)'));
+        if (createdAt) expanded.appendChild(buildDetailRow('Submitted', formatTimeAgo(createdAt)));
         card.appendChild(expanded);
 
         // Click to toggle expand
         card.addEventListener('click', function () {
-            if (state.expandedReportId === report.id) {
+            if (state.expandedReportId === reportId) {
                 state.expandedReportId = null;
             } else {
-                state.expandedReportId = report.id;
+                state.expandedReportId = reportId;
             }
             renderStatusView();
         });
