@@ -2,6 +2,12 @@
 
 All notable changes to modora-admin are documented here.
 
+## [2.0.6] - 2026-07-12
+
+### Fixed
+
+- **`/reportstatus` "My Reports":** report cards showed `#undefined` as the channel name for every report. The NUI read camelCase keys (`report.channelName`, `report.category`) while the API returns snake_case (`channel_name`, `category_label`). It now reads the snake_case fields (with camelCase fallbacks), only renders the channel line while the Discord ticket is still live, and shows the resolved category label instead of the raw category id.
+
 ## [2.0.5] - 2026-07-02
 
 ### Fixed
